@@ -285,5 +285,3 @@ void demo_binary_representations(void) {
 }
 ```
 
----
-
