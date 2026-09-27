@@ -112,7 +112,7 @@ While declarations describe what an identifier represents, **definitions** speci
 * **Declarations vs. Definitions:** **Takeaway 2.3 #1** highlights that *declarations specify identifiers, whereas definitions specify objects*.
 * **Initialization as Definition:** **Takeaway 2.3 #2** establishes that *an object is defined at the same time it is initialized*. Initializing a variable instructs the compiler to allocate storage for its value.
 * **Array Rules & Designated Initializers:**
-  * **Takeaway 2.3 #4:** For an array with \\(n\\) elements, the first element has index `0`, and the last has index `n-1`.
+  * **Takeaway 2.3 #4:** For an array with `n` elements, the first element has index `0`, and the last has index `n-1`.
   * Designated initializers allow selective element initialization (e.g., `double A = {  = 9.0, = 2.9 }`).
   * **Takeaway 2.3 #3:** Missing elements in initializers default to `0` (or `0.0` for floating point).
 * **The Single Definition Rule:** **Takeaway 2.3 #5** dictates that *each object or function must have exactly one definition* across the program.
@@ -124,7 +124,7 @@ While declarations describe an identifier's properties, **definitions** allocate
 * **Takeaway 2.3 #1:** *Declarations specify identifiers, whereas definitions specify objects*.
 * **Takeaway 2.3 #2:** *An object is defined at the same time it is initialized*.
 * **Takeaway 2.3 #3:** *Missing elements in initializers default to 0*.
-* **Takeaway 2.3 #4:** *For an array with \\(n\\) elements, the first element has index 0, and the last has index \\(n-1\\)*.
+* **Takeaway 2.3 #4:** *For an array with `n` elements, the first element has index 0, and the last has index `n-1`*.
 * **Takeaway 2.3 #5:** *Each object or function must have exactly one definition*.
 
 ```c
