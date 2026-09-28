@@ -6,8 +6,8 @@ date = 2026-09-28
 [taxonomies]
 tags = ["modernc"]
 
-# [extra]
-# math = false
+[extra]
+math = true
 # cover.image = "images/cover.png"
 +++
 

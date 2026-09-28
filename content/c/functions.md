@@ -6,8 +6,8 @@ date = 2026-09-28
 [taxonomies]
 tags = ["modernc"]
 
-# [extra]
-# math = false
+[extra]
+math = true
 # cover.image = "images/cover.png"
 +++
 
@@ -144,7 +144,7 @@ Recursive functions directly or indirectly call themselves. Every invocation cre
   * **Takeaway 7.3 #2:** *In a recursive function, first check the termination condition*. Missing a termination check causes infinite recursion, leading to stack overflow and program crash.
   * **Takeaway 7.3 #3:** *Ensure the preconditions of a recursive function in a wrapper function*. A public wrapper function validates inputs once before passing control to the recursive implementation.
 * **Performance Realities:**
-  * **Takeaway 7.3 #4:** *Multiple recursion may lead to exponential computation times*. (e.g., naive recursive Fibonacci calculation recomputes overlapping subproblems, yielding \\(O(\phi^n)\\) runtime).
+  * **Takeaway 7.3 #4:** *Multiple recursion may lead to exponential computation times*. (e.g., naive recursive Fibonacci calculation recomputes overlapping subproblems, yielding $O(\phi^n)$ runtime).
   * **Takeaway 7.3 #5 & #6:** *A bad algorithm will never lead to a performing implementation; improving an algorithm can dramatically improve performance*. (e.g., replacing naive recursion with memoization/caching or iterative loops).
 
 #### Example
