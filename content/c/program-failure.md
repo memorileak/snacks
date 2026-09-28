@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Program failure"
 description = "A guide to C23 program failures, from invalid operations and resource exhaustion to race conditions and livelocks, with strategies for prevention, error handling, and cleanup."
-date = 2026-09-28
+date = 2026-09-28T05:09:19Z
 
 [taxonomies]
 tags = ["modernc"]

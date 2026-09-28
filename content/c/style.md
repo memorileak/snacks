@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Style"
 description = "A guide to readable C23 style, covering consistent formatting, identifier naming and namespace rules, meaningful names, and Unicode considerations."
-date = 2026-09-28
+date = 2026-09-28T03:44:12Z
 
 [taxonomies]
 tags = ["modernc"]

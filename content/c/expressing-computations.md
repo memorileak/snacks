@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Expressing computations"
 description = "An overview of C23 operators, arithmetic, assignments, boolean logic, conditional expressions, side effects, and evaluation order for writing clear and predictable computations."
-date = 2026-09-27
+date = 2026-09-27T17:14:46Z
 
 [taxonomies]
 tags = ["modernc"]

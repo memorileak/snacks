@@ -1,7 +1,7 @@
 +++
 title = "Modern C: More involved processing and IO"
 description = "A guide to C23 text processing, formatted input, multibyte and UTF conversions, binary streams, and compile-time resource embedding."
-date = 2026-09-28
+date = 2026-09-28T05:02:48Z
 
 [taxonomies]
 tags = ["modernc"]

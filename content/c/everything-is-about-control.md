@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Everything is about control"
 description = "An introduction to C23 control flow, covering conditional execution, scalar truth values, iteration, loop control, and multi-way selection with switch statements."
-date = 2026-09-27
+date = 2026-09-27T16:34:00Z
 
 [taxonomies]
 tags = ["modernc"]

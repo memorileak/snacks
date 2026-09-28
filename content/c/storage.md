@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Storage"
 description = "A guide to C23 storage duration and object lifetimes, dynamic allocation and deallocation, initialization APIs, VLAs, and the execution stack."
-date = 2026-09-28
+date = 2026-09-28T04:53:34Z
 
 [taxonomies]
 tags = ["modernc"]

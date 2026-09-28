@@ -1,7 +1,7 @@
 +++
 title = "Modern C: The C memory model"
 description = "A guide to the C23 memory model, covering object representations, unions, strict aliasing, void pointers, casts, effective types, and alignment."
-date = 2026-09-28
+date = 2026-09-28T04:47:32Z
 
 [taxonomies]
 tags = ["modernc"]

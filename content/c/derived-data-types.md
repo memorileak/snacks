@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Derived data types"
 description = "An overview of C23 arrays, pointers, structures, bit-fields, and typedefs, with examples of how these derived types are declared and used."
-date = 2026-09-28
+date = 2026-09-28T02:42:25Z
 
 [taxonomies]
 tags = ["modernc"]

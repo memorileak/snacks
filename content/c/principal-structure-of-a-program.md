@@ -1,7 +1,7 @@
 +++
 title = "Modern C: The principal structure of a program"
 description = "A practical introduction to the grammar, declarations, definitions, scopes, initialization, statements, iteration, function calls, and control flow that shape a C23 program."
-date = 2026-09-27
+date = 2026-09-27T16:20:11Z
 
 [taxonomies]
 tags = ["modernc"]

@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Function-like macros"
 description = "A guide to C23 function-like macros, including expansion rules, argument constraints, caller context, variadic interfaces, and default arguments."
-date = 2026-09-28
+date = 2026-09-28T07:10:00Z
 
 [taxonomies]
 tags = ["modernc"]

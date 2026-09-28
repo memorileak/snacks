@@ -1,7 +1,7 @@
 +++
 title = "Modern C: C library functions"
 description = "An overview of the C23 standard library, including error handling, checked arithmetic, bit operations, math, I/O, strings, time, environment access, and program termination, with commented examples."
-date = 2026-09-28
+date = 2026-09-28T03:24:25Z
 
 [taxonomies]
 tags = ["modernc"]

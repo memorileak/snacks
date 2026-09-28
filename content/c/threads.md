@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Threads"
 description = "A guide to C23 threads and synchronization, covering atomics, thread-local state, mutexes, condition variables, thread lifecycles, and deadlock prevention."
-date = 2026-09-28
+date = 2026-09-28T07:31:17Z
 
 [taxonomies]
 tags = ["modernc"]

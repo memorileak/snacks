@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Basic values and data"
 description = "An overview of C23 values, types, literals, conversions, initialization, constants, and binary representations, with practical guidance for writing predictable code."
-date = 2026-09-27
+date = 2026-09-27T17:21:19Z
 
 [taxonomies]
 tags = ["modernc"]

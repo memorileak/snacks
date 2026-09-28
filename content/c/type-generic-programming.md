@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Type-generic programming"
 description = "A guide to C23 type-generic programming, covering inherent generic features, _Generic dispatch, type inference with auto and typeof, and anonymous function extensions."
-date = 2026-09-28
+date = 2026-09-28T07:16:58Z
 
 [taxonomies]
 tags = ["modernc"]

@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Variations in control flow"
 description = "A guide to C23 control flow beyond ordinary sequencing, covering sequence points, goto, recursion, setjmp and longjmp, and asynchronous signal handlers."
-date = 2026-09-28
+date = 2026-09-28T07:24:28Z
 
 [taxonomies]
 tags = ["modernc"]

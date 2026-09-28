@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Performance"
 description = "A guide to safe C23 optimization, covering compiler assistance, inline linkage, restrict-qualified pointers, optimization attributes, and statistical performance measurement."
-date = 2026-09-28
+date = 2026-09-28T07:02:58Z
 
 [taxonomies]
 tags = ["modernc"]

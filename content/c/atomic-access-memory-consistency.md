@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Atomic access and memory consistency"
 description = "A guide to C23 atomic memory consistency, covering happens-before ordering, library synchronization, sequential consistency, and explicit memory orders."
-date = 2026-09-28
+date = 2026-09-28T07:41:09Z
 
 [taxonomies]
 tags = ["modernc"]

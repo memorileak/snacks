@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Functions"
 description = "A guide to C23 function prototypes, return rules, main and command-line arguments, recursion, preconditions, and algorithmic performance, with commented examples."
-date = 2026-09-28
+date = 2026-09-28T03:02:07Z
 
 [taxonomies]
 tags = ["modernc"]

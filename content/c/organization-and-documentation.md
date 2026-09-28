@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Organization and documentation"
 description = "A guide to structuring C23 projects, documenting interfaces, clarifying implementations, writing safe macros, and using pure functions and standard attributes."
-date = 2026-09-28
+date = 2026-09-28T03:55:22Z
 
 [taxonomies]
 tags = ["modernc"]

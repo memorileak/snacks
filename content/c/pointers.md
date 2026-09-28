@@ -1,7 +1,7 @@
 +++
 title = "Modern C: Pointers"
 description = "An overview of C23 pointers, covering address and dereference operators, pointer arithmetic and bounds, null pointers, struct and array access, and function callbacks."
-date = 2026-09-28
+date = 2026-09-28T04:05:59Z
 
 [taxonomies]
 tags = ["modernc"]
