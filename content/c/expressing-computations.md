@@ -48,15 +48,15 @@ void demo_operands_and_operators(void) {
 
 ### 2. Arithmetic and Modular Rules (Section 4.2)
 * **Unsigned Arithmetic is Always Well-Defined:** Unsigned integer operations (`+`, `-`, `*`) never generate undefined behavior on their own. As long as the mathematical result fits in `[0, SIZE_MAX]`, the result is exact.
-* **Modular Wrap-Around:** Arithmetic on `size_t` implicitly operates **modulo \\(\text{SIZE\_MAX} + 1\\)**. When an operation overflows, it safely wraps around (e.g., `SIZE_MAX + 1` wraps to `0`, and `0 - 1` evaluates to `SIZE_MAX`).
+* **Modular Wrap-Around:** Arithmetic on `size_t` implicitly operates **modulo $\text{SIZE\\_MAX} + 1$**. When an operation overflows, it safely wraps around (e.g., `SIZE_MAX + 1` wraps to `0`, and `0 - 1` evaluates to `SIZE_MAX`).
 * **Integer Division and Remainder:**
-  * For unsigned integers, division `/` (quotient) and remainder `%` satisfy: \\(\text{a} == (\text{a} / \text{b}) * \text{b} + (\text{a} \% \text{b})\\).
+  * For unsigned integers, division `/` (quotient) and remainder `%` satisfy: $\text{a} == (\text{a} / \text{b}) * \text{b} + (\text{a} \\% \text{b})$.
   * Both `/` and `%` can **never overflow**, and their outputs are always smaller than or equal to the inputs.
   * **Division by Zero is strictly forbidden** and results in runtime failure.
 
 #### Example
 
-Unsigned arithmetic on `size_t` is strictly well-defined and never causes undefined overflow. When an unsigned computation exceeds `SIZE_MAX`, it wraps around implicitly **modulo \\(\text{SIZE\_MAX} + 1\\)**. Division (`/`) and remainder (`%`) satisfy the exact mathematical identity \\(a == (a / b) \\cdot b + (a \\% b)\\), provided \\(b \\neq 0\\).
+Unsigned arithmetic on `size_t` is strictly well-defined and never causes undefined overflow. When an unsigned computation exceeds `SIZE_MAX`, it wraps around implicitly **modulo $\text{SIZE\\_MAX} + 1$**. Division (`/`) and remainder (`%`) satisfy the exact mathematical identity $a == (a / b) \\cdot b + (a \\% b)$, provided $b \\neq 0$.
 
 ```c
 #include <stdio.h>

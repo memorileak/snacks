@@ -40,28 +40,32 @@ Arrays combine multiple subobjects of the **same base type** into a single encap
 Arrays combine objects of the same type. **Arrays are not pointers**, and **there are no array values**—meaning arrays cannot be directly assigned or compared using `==`.
 
 ```c
-#include <stdio.h>
 #include <stddef.h>
+#include <stdio.h>
 
 // Function taking an array parameter:
-// Note: In function headers, 'double A[len]' is rewritten by the compiler to 'double* A'.
+// Note: In function headers, 'double A[len]' is rewritten by the compiler to
+// 'double* A'.
 void print_array_info(size_t len, double const A[len]) {
   // INSIDE A FUNCTION: sizeof A yields the size of the POINTER, not the array!
-  printf("Inside function: sizeof A = %zu bytes (size of pointer!)\n", sizeof A);
+  printf("Inside function: sizeof A = %zu bytes (size of pointer!)\n",
+         sizeof A);
 
   for (size_t i = 0; i < len; ++i) {
     printf("%g ", A[i]);
   }
+
   printf("\n");
 }
 
 void demo_arrays(void) {
   // 1. Fixed-Length Array (FLA) initialized with C23 universal initializer {}
-  double weights = {1.5, 2.5, 3.5, 4.5};
+  double weights[] = {1.5, 2.5, 3.5, 4.5};
 
-  // Array element count formula: (sizeof A) / (sizeof A)
-  size_t count = sizeof weights / sizeof weights;
-  printf("Array element count: %zu (Total bytes: %zu)\n", count, sizeof weights);
+  // Array element count formula: (sizeof A) / (sizeof A[0])
+  size_t count = sizeof weights / sizeof weights[0];
+  printf("Array element count: %zu (Total bytes: %zu)\n", count,
+         sizeof weights);
 
   // Arrays decay to pointers when passed to functions:
   print_array_info(count, weights);
@@ -69,16 +73,18 @@ void demo_arrays(void) {
   // 2. Variable-Length Array (VLA): Length evaluated at runtime
   size_t vla_len = 3;
   double vla_arr[vla_len]; // VLA allocated on stack for dynamic size
-  vla_arr = 10.0;
+  vla_arr[0] = {10.0};
 
   // 3. Strings: 0-terminated character arrays
   // "C23" has 3 visible characters, but occupies 4 bytes ending in '\0'
   char const str[] = "C23";
-  printf("String '%s' has sizeof = %zu (includes null terminator '\\0')\n", str, sizeof str);
+  printf("String '%s' has sizeof = %zu (includes null terminator '\\0')\n", str,
+         sizeof str);
 
   // ARRAYS ARE NOT ASSIGNABLE OR COMPARABLE:
   // double copy; copy = weights;  // COMPILER ERROR! Cannot assign arrays
-  // if (weights == copy) ...       // ILL-ADVISED: Compares pointer addresses, not array elements!
+  // if (weights == copy) ...       // ILL-ADVISED: Compares pointer addresses,
+  // not array elements!
 }
 ```
 
@@ -138,7 +144,7 @@ Structures (`struct`) group items that may have **different base types** into a 
   * There is **no padding at the start** of a structure. Reordering structure members (e.g., placing larger types first) can significantly reduce wasted padding memory.
 * **Bit-Fields in C23:**
   * Bit-fields allow specifying exact bit widths for structure members (e.g., for flags or compact data).
-  * Avoid bare `int` for bit-fields due to implementation-defined signedness issues. Use **`_BitInt(N)`** for numerical bit-fields of width \\(N\\), and **`bool`** for single-bit flags.
+  * Avoid bare `int` for bit-fields due to implementation-defined signedness issues. Use **`_BitInt(N)`** for numerical bit-fields of width $(N)$, and **`bool`** for single-bit flags.
 
 #### Example
 
