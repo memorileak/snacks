@@ -1,6 +1,6 @@
 +++
 title = "The `static` keyword in C23"
-description = ""
+description = "A comprehensive guide to the `static` keyword in C, covering its usage inside functions, global scope, and function parameters."
 date = 2026-09-30T02:24:24+00:00
 
 [taxonomies]
@@ -60,8 +60,8 @@ void public_api_function() {
 ### 3. Inside Array Declarations in Function Parameters (Modern C / C99+)
 In modern C (C99 and newer), static has a lesser-known third use inside function parameter array brackets.
 
-* What it does: It acts as a hint to the compiler optimizer, guaranteeing that the array argument passed into the function will always contain at least the specified number of elements and will not be NULL.
-* Why use it: It allows the compiler to generate highly optimized assembly code (like using SIMD vector instructions) because it doesn't have to worry about null checks or out-of-bounds safety checks for that boundary.
+* **What it does**: It acts as a hint to the compiler optimizer, guaranteeing that the array argument passed into the function will always contain at least the specified number of elements and will not be NULL.
+* **Why use it**: It allows the compiler to generate highly optimized assembly code (like using SIMD vector instructions) because it doesn't have to worry about null checks or out-of-bounds safety checks for that boundary.
 
 ```c
 // The compiler assumes 'arr' is never NULL and has AT LEAST 4 elements
