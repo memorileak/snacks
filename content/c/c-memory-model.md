@@ -11,59 +11,71 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-The C memory model abstracts the physical memory into **virtual memory**, ensuring portability (you don't manage physical addresses) and safety (you can't access memory your process doesn't own).
+## 12. The C memory model
 
-**Key Takeaway #1:** Pointer types with distinct base types are distinct newly derived types.
+- The C memory model provides an abstraction mapping objects to a virtual memory space.
+- The memory model focuses heavily on the type of object a pointer addresses.
+- **Takeaway 12 #1:** Pointer types with distinct base types are distinct.
 
 ```c
 #include <stdio.h>
 
 int main(void) {
-    int x = 42;
-    double y = 3.14;
+    double x = 3.14;
+    int y = 42;
 
-    int *px = &x;
-    double *py = &y;
+    double* pd = &x;
+    int* pi = &y;
 
-    // px and py are distinct types because their base types (int vs double) differ.
-    // px = py; // This would cause a compiler error or warning!
+    // Takeaway 12 #1: 'pd' and 'pi' are distinct types.
+    // They cannot be freely assigned to each other without raising errors or requiring a cast.
+    // pi = pd; // This would cause a compilation error.
 
     return 0;
 }
-
 ```
 
-## 12.1 A uniform memory model
+## 12.1. A uniform memory model
 
-C simplifies objects by treating them as an assemblage of **bytes**.
-
-- **Takeaway 12.1 #1:** `sizeof(char)` is `1` by definition. The character types (`char`, `unsigned char`, `signed char`) take up exactly 1 byte.
+- All objects in C can be treated as an assemblage of bytes on a fundamental level.
+- **Takeaway 12.1 #1:** `sizeof(char)` is 1 by definition.
+- **Takeaway 12.1 #2:** Every object A can be viewed as `unsigned char[sizeof A]`.
+- **Takeaway 12.1 #3:** Pointers to character types are special because they can alias other types.
+- **Takeaway 12.1 #4:** Use the type `char` for character and string data.
+- **Takeaway 12.1 #5:** Use the type `unsigned char` as the atom of all object types.
+- **Takeaway 12.1 #6:** The `sizeof` operator can be applied to objects and object types.
 - **Takeaway 12.1 #7:** The size of all objects of type `T` is given by `sizeof(T)`.
 
 ```c
 #include <stdio.h>
 
 int main(void) {
-    // Demonstrating the uniform size foundation in C
-    printf("Size of char: %zu byte(s)\n", sizeof(char));
+    int value = 258;
 
-    double arr[5];
-    // The size of the entire object (array) is calculated based on its type
-    printf("Size of double[5]: %zu bytes\n", sizeof(arr));
+    // Takeaway 12.1 #1 & #6: sizeof(char) is exactly 1.
+    printf("Size of char: %zu\n", sizeof(char));
+
+    // Takeaway 12.1 #7: Size of the int object 'value'
+    printf("Size of int: %zu\n", sizeof(value));
+
+    // Takeaway 12.1 #2 & #5: Treating object as unsigned char array
+    unsigned char* byte_view = (unsigned char*)&value;
+    printf("First byte of 'value': %u\n", byte_view[0]);
 
     return 0;
 }
-
 ```
 
-## 12.2 Unions
+## 12.2. Unions
 
-`union` is the preferred tool to examine the individual bytes of objects. It overlays different object types over the exact same object representation (memory location).
+- Unions overlay different object types over the same object representation.
+- **Takeaway 12.2 #1:** The in-memory order of the representation digits of an arithmetic type is implementation-defined (endianness).
+- **Takeaway 12.2 #2:** On most architectures, `CHAR_BIT` is 8 and `UCHAR_MAX` is 255.
 
 ```c
 #include <stdio.h>
 
-// Using a union to inspect the byte-level representation (endianness) of an integer
+// Example adapted from the book: endianness.c
 typedef union unsignedInspect unsignedInspect;
 union unsignedInspect {
     unsigned val;
@@ -71,162 +83,145 @@ union unsignedInspect {
 };
 
 int main(void) {
-    unsignedInspect twofold = { .val = 0xAABBCCDD };
+    // Overlays an unsigned integer and an array of characters
+    unsignedInspect twofold = { .val = 0xAABBCCDD, };
 
-    printf("value is 0x%.08X\n", twofold.val);
-
-    // Prints the object memory byte-by-byte.
-    // Depending on your CPU (Little-Endian vs Big-Endian), the order will differ!
-    for (size_t i = 0; i < sizeof twofold.bytes; ++i) {
-        printf("byte[%zu]: 0x%.02hhX\n", i, twofold.bytes[i]);
-    }
+    // Takeaway 12.2 #1: The output order here depends on the architecture's endianness
+    printf("First byte: 0x%02X\n", twofold.bytes[0]);
 
     return 0;
 }
-
 ```
 
-## 12.3 Memory and state
+## 12.3. Memory and state
 
-The abstract state of a C program execution consists of the values of all its objects. Passing pointers to functions makes it difficult for the compiler to track state because pointers can modify objects behind the scenes (side effects/aliasing).
+- Aliasing happens when the same object is accessed through different pointers. This inhibits compiler optimizations because the abstract state becomes difficult to determine.
+- **Takeaway 12.3 #1 (Aliasing):** With the exclusion of character types, only pointers of the same base type may alias.
+- **Takeaway 12.3 #2:** Avoid the `&` operator to help prevent accidental aliasing.
 
 ```c
 #include <stdio.h>
+#include <stddef.h>
 
-// Because `b` is passed as a pointer, the compiler cannot guarantee
-// the state of the object it points to won't change during the call.
-double blub(double const* a, double* b) {
-    double myA = *a;
-    *b = 2 * myA; // State of the object pointed to by `b` is modified
-    return *a;
+// Takeaway 12.3 #1: The compiler assumes 'a' and 'b' point to different objects
+// because size_t* and double* are distinct and neither is a character type.
+size_t blob(size_t const* a, double* b) {
+    size_t myA = *a;
+    *b = 2 * myA;
+    return *a; // Compiler safely assumes *a is still equal to myA
 }
 
 int main(void) {
-    double c = 35.0;
-    double d = 3.5;
+    size_t val1 = 10;
+    double val2 = 0;
 
-    printf("blub returns: %g\n", blub(&c, &d));
-    // The compiler must read `d` from memory here, as `blub` modified it.
-    printf("after blub, d is now %g\n", d);
-
-    return 0;
-}
-
-```
-
-## 12.4 Pointers to unspecific objects
-
-Sometimes you need to hold an address without knowing its type yet. `void*` acts as a generic untyped pointer. It can accept any data pointer, but cannot be dereferenced directly without being cast to a specific type first.
-
-```c
-#include <stdio.h>
-
-int main(void) {
-    double value = 9.99;
-
-    // Untyped pointer takes the address of a double
-    void* ptr = &value;
-
-    // To read the state/memory, we must cast it back to the proper typed pointer
-    double* typed_ptr = (double*)ptr;
-    printf("Value through untyped pointer: %g\n", *typed_ptr);
+    blob(&val1, &val2);
+    printf("val2 is now: %f\n", val2);
 
     return 0;
 }
-
 ```
 
-## 12.5 Explicit conversions
+## 12.4. Pointers to unspecific objects
 
-Casts (e.g., `(T)X`) explicitly convert a value to another type. Converting an object pointer to a pointer to a character type (`unsigned char*`) is explicitly allowed and mostly harmless for inspecting memory.
+- The `void*` type acts as a pointer into a generic storage instance, stripping away type information.
+- **Takeaway 12.4 #1:** Any object pointer converts to and from `void*`.
+- **Takeaway 12.4 #2:** An object has storage, type, and value.
+- **Takeaway 12.4 #3:** Converting an object pointer to `void*` and then back to the same type is the identity operation.
+- **Takeaway 12.4 #4:** Avoid `void*` when possible because it removes the compiler's ability to protect you with type checking.
 
 ```c
 #include <stdio.h>
 
 int main(void) {
+    double original = 42.5;
+
+    // Takeaway 12.4 #1: Implicit conversion to void*
+    void* generic_ptr = &original;
+
+    // Takeaway 12.4 #3: Converting back to double* restores the exact original pointer
+    double* restored_ptr = generic_ptr;
+
+    printf("Restored value: %f\n", *restored_ptr);
+
+    return 0;
+}
+```
+
+## 12.5. Explicit conversions
+
+- Casts explicitly override the compiler's type system, which often masks poor design decisions.
+- **Takeaway 12.5 #1:** Don't use casts.
+- _Exception:_ You may cast an object pointer to a character pointer (like `unsigned char*`) to inspect its byte representation.
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    float f = 37.0f;
+    double a = f;        // Safe implicit conversion
+    void* pv = &f;       // Safe implicit conversion to void*
+    float* pfv = pv;     // Safe implicit conversion back from void*
+
+    // Takeaway 12.5 #1: Avoid explicit casts. If you must inspect bytes:
     unsigned val = 0xAABBCCDD;
+    unsigned char* valp = (unsigned char*)&val; // One of the rare acceptable casts
 
-    // Explicit conversion (cast) from unsigned* to unsigned char*
-    // This allows us to inspect the raw bytes safely.
-    unsigned char* valp = (unsigned char*)&val;
-
-    for (size_t i = 0; i < sizeof(unsigned); ++i) {
+    for (size_t i = 0; i < sizeof(val); ++i) {
         printf("byte[%zu]: 0x%.02hhX\n", i, valp[i]);
     }
 
     return 0;
 }
-
 ```
 
-## 12.6 Effective types
+## 12.6. Effective types
 
-C heavily restricts how an object can be accessed to prevent undefined behavior and optimize safely.
-
-- **Takeaway 12.6 #1:** Objects must be accessed through their **effective type** (their declared type) OR through a **pointer to a character type** (like `char*` or `unsigned char*`).
+- The effective type restricts how an object's memory can be accessed to prevent aliasing violations.
+- **Takeaway 12.6 #1 (Effective type):** Objects must be accessed through their effective type or through a pointer to a character type.
+- **Takeaway 12.6 #2:** Any member of an object that has an effective union type can be accessed at any time.
+- **Takeaway 12.6 #3:** The effective type of a variable or compound literal is the type of its declaration.
+- **Takeaway 12.6 #4:** Variables and compound literals must be accessed through their declared type or through a pointer to a character type.
 
 ```c
 #include <stdio.h>
 
 int main(void) {
-    float pi = 3.1415f;
+    float myFloat = 3.14f; // Declared type is float
 
-    // VALID access: using the effective type
-    float *p_float = &pi;
+    // Takeaway 12.6 #1 & #4: Valid access via effective type
+    float* fPtr = &myFloat;
 
-    // VALID access: using a character type
-    unsigned char *p_char = (unsigned char *)&pi;
+    // Takeaway 12.6 #1 & #4: Valid access via character type pointer
+    unsigned char* cPtr = (unsigned char*)&myFloat;
 
-    // INVALID access (Violates strict aliasing):
-    // int *p_int = (int *)&pi;
-    // printf("%d", *p_int); // Undefined Behavior!
-
-    printf("Effective type value: %f\n", *p_float);
-    printf("First byte of float: 0x%02X\n", p_char[0]);
+    // INVALID access (Violates strict aliasing/effective types)
+    // int* iPtr = (int*)&myFloat;
+    // printf("%d", *iPtr); // Undefined behavior
 
     return 0;
 }
-
 ```
 
-## 12.7 Alignment
+## 12.7. Alignment
 
-Objects usually must start at specific byte boundaries (e.g., multiples of 4 or 8), known as **alignment**.
-Forcing a pointer cast from a narrow type (like `unsigned char*`) to a wider type (like `double*` or `complex double*`) at an unaligned offset can cause severe crashes (Bus Errors).
+- Objects typically start at specific byte positions (word boundaries) called alignments to optimize architecture operations.
+- Keywords: `alignof` returns the alignment requirement of a type, and `alignas` forces allocation at a specified alignment.
 
 ```c
 #include <stdio.h>
-#include <complex.h>
-#include <stdalign.h> // For alignof in older C standards (C23 uses just `alignof`)
-
-typedef double complex cdbl;
+#include <stdalign.h> // Header for older standard compatibility
 
 int main(void) {
-    // Overlay an array of complex doubles with a byte buffer
-    union {
-        cdbl val[2];
-        unsigned char buf[sizeof(cdbl[2])];
-    } toocomplex = {
-        .val = { 0.5 + 0.5*I, 0.75 + 0.75*I }
-    };
+    // 'alignof' returns the alignment of the specific type
+    printf("Alignment of double: %zu\n", alignof(double));
 
-    printf("size/alignment of cdbl: %zu / %zu\n", sizeof(cdbl), alignof(cdbl));
+    // 'alignas' forces custom alignment. Useful for vectorized operations.
+    // Forcing an array of 4 floats to align to the total size of the array itself.
+    alignas(sizeof(float[4])) float fvec[4] = {1.0, 2.0, 3.0, 4.0};
 
-    // WARNING: Code below demonstrates alignment danger!
-    // In the book, casting to `cdbl*` at offset 4 causes a "Bus error"
-    // because `cdbl` requires an alignment of 8 bytes, but 4 is not a multiple of 8.
-
-    size_t offset = 8; // Change to 4 on many systems to trigger a crash!
-
-    if (offset % alignof(cdbl) == 0) {
-        cdbl* bp = (cdbl*)(&toocomplex.buf[offset]); // aligned and safe
-        printf("Aligned access successful: %g + %gI\n", creal(*bp), cimag(*bp));
-    } else {
-        printf("Offset %zu is UNALIGNED! Accessing it could crash.\n", offset);
-    }
+    printf("Custom alignment of fvec (address): %p\n", (void*)fvec);
 
     return 0;
 }
-
 ```
-
