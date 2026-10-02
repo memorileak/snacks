@@ -11,16 +11,18 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-This chapter covers how C manages memory through dynamic allocation, the rules of storage duration and initialization, and the precise definitions of object lifetimes.
+## 13.1. malloc and friends
 
-## 13.1 malloc and friends
+- Dynamic allocation allows reclaiming storage instances for objects on the fly and releasing them when no longer needed.
+- Functions include `malloc`, `calloc`, `realloc`, `aligned_alloc`, and `free` (from `<stdlib.h>`), plus POSIX additions `strdup` and `strndup` (from `<string.h>`).
 
-Dynamic allocation allows programs to request memory on the fly to handle varying data sizes. The standard library `<stdlib.h>` provides `malloc`, `free`, `calloc`, `realloc`, and `aligned_alloc`. These functions operate with `void*`, meaning the memory is just raw bytes until used.
+**Takeaways:**
 
-- **Takeaway 13.1 #1 & #5:** Only use allocation functions with a size strictly greater than zero. Storage allocated through `malloc` is uninitialized and has no type.
-- **Takeaway 13.1 #2 & 13.1.1 #1:** Failed allocations result in a null pointer. Always check the return value!
-- **Takeaway 13.1 #3:** Prefer the use of `strndup` over `strdup` to prevent out-of-bounds reading.
-- **Takeaway 13.1 #4:** Do not cast the return of `malloc` and friends (e.g., `(int*)malloc(...)` is bad practice in C).
+- **Takeaway 13.1 #1:** Only use the allocation functions with a size strictly greater than zero.
+- **Takeaway 13.1 #2:** Failed allocations result in a null pointer.
+- **Takeaway 13.1 #3:** Prefer the use of `strndup` over `strdup` (prevents reading beyond buffer if not 0-terminated).
+- **Takeaway 13.1 #4:** Don’t cast the return of `malloc` and friends. (They return `void*`, which automatically converts to any pointer type).
+- **Takeaway 13.1 #5:** Storage allocated through `malloc` is uninitialized and has no type.
 
 ```c
 #include <stdlib.h>
@@ -28,227 +30,329 @@ Dynamic allocation allows programs to request memory on the fly to handle varyin
 #include <stdio.h>
 
 int main(void) {
-    // Takeaway 13.1 #1, #4, #5: Allocate memory without casting.
-    size_t length = 5;
-    double* largeVec = malloc(length * sizeof *largeVec);
+    // Takeaway 13.1 #1 & #4: Size > 0, no casting of the void* return.
+    double* largeVec = malloc(100 * sizeof(double));
 
-    // Takeaway 13.1 #2: Check for failure
-    if (largeVec) {
-        for(size_t i = 0; i < length; ++i) {
-            largeVec[i] = 0.0; // Now the memory acquires an effective type
+    // Takeaway 13.1 #2 & #5: Check for null. Storage has no type until written to.
+    if (largeVec != NULL) {
+        largeVec[0] = 3.14; // Now the effective type is double
+    }
+
+    const char* source = "Hello, World!";
+    // Takeaway 13.1 #3: Prefer strndup to limit max read length.
+    char* copy = strndup(source, 5);
+    if (copy) {
+        printf("%s\n", copy); // Prints "Hello"
+        free(copy);
+    }
+
+    free(largeVec);
+    return 0;
+}
+```
+
+## 13.1.1. A complete example with varying array size
+
+- Demonstrates managing a dynamically allocated structure (like a circular buffer).
+- The `[[nodiscard]]` attribute ensures the returned pointer replaces the old one.
+
+**Takeaway:**
+
+- **Takeaway 13.1.1 #1:** `malloc` indicates failure by returning a null pointer value.
+
+```c
+#include <stdlib.h>
+
+typedef struct circular circular;
+struct circular {
+    size_t cap;
+    double* tab;
+};
+
+circular* circular_init(circular* c, size_t cap) {
+    if (c) {
+        if (cap) {
+            *c = (circular){
+                .cap = cap,
+                .tab = malloc(sizeof(double[cap])),
+            };
+            // Takeaway 13.1.1 #1: Checking if malloc failed and returned null
+            if (!c->tab) c->cap = 0;
+        } else {
+            *c = (circular){ };
         }
-        free(largeVec);
     }
+    return c;
+}
 
-    // Takeaway 13.1 #3: Prefer strndup
-    const char* source = "Hello World";
-    char* safe_str = strndup(source, 5); // Copies exactly 5 chars
-    if (safe_str) {
-        printf("%s\n", safe_str); // Prints "Hello"
-        free(safe_str);
-    }
-
+int main(void) {
+    circular c;
+    circular_init(&c, 10);
+    free(c.tab);
     return 0;
 }
 ```
 
-## 13.1.2 Ensuring consistency of dynamic allocations
+## 13.1.2. Ensuring consistency of dynamic allocations
 
-Memory leaks (loss of allocated objects) and memory corruption occur when allocations and deallocations do not match perfectly.
+- Every allocated block must be paired with exactly one deallocation to avoid memory leaks.
 
-- **Takeaway 13.1.2 #1 & #2:** For every allocation (`malloc`, `calloc`, etc.), there must be exactly one `free`.
-- **Takeaway 13.1.2 #3:** Only call `free` with pointers exactly as they were returned by the allocation functions. Never free variables, compound literals, or offsets of pointers.
+**Takeaways:**
+
+- **Takeaway 13.1.2 #1:** For every allocation, there must be a `free`.
+- **Takeaway 13.1.2 #2:** For every `free`, there must be a `malloc`, `calloc`, `aligned_alloc`, or `realloc`.
+- **Takeaway 13.1.2 #3:** Only call `free` with pointers as they are returned by `malloc`, `calloc`, `aligned_alloc`, or `realloc`.
 
 ```c
 #include <stdlib.h>
 
 int main(void) {
-    int* ptr = calloc(10, sizeof(int));
-    if (ptr) {
-        // Do work...
+    // Takeaway 13.1.2 #2: Using malloc to get a valid pointer
+    int* data = malloc(sizeof(int));
 
-        // Takeaway 13.1.2: Matching free.
-        // Freeing (ptr + 1) or forgetting this step is catastrophic.
-        free(ptr);
+    if (data) {
+        *data = 42;
     }
+
+    // Takeaway 13.1.2 #1 & #3: Using free exactly once, on the returned pointer
+    free(data);
+
     return 0;
 }
 ```
 
-## 13.1.3 Flexible array members
+## 13.1.3. Flexible array members
 
-A Flexible Array Member (FLA) is an array without a specified size declared as the _last_ member of a struct. It lets you allocate the struct and the array buffer in a single block of memory.
+- A flexible array member (FLA) must be the last member of a struct, defined as an incomplete array `[]`.
 
-- **Takeaway 13.1.3 #1:** You must manually allocate enough storage to access the structure AND the array elements.
-- **Takeaway 13.1.3 #2:** Consistency between a length member and the flexible array must be maintained manually.
+**Takeaways:**
+
+- **Takeaway 13.1.3 #1:** A structure object with a flexible array member must have enough storage to access the structure as a whole.
+- **Takeaway 13.1.3 #2:** Consistency between a length member and a flexible array member must be maintained manually.
 
 ```c
 #include <stdlib.h>
-#include <stdio.h>
-#include <stddef.h>
 #include <stdint.h>
+#include <stddef.h>
 
-// Struct with a flexible array member
-typedef struct {
+typedef struct ua32 ua32;
+struct ua32 {
     size_t length;
-    uint32_t data[]; // Flexible array must be the last member
-} ua32;
+    uint32_t data[]; // Flexible array member
+};
 
 int main(void) {
-    size_t len = 10;
-    // Takeaway 13.1.3 #1: Calculate total size (struct + array elements)
+    size_t len = 32;
+    // Takeaway 13.1.3 #1: Allocate enough for struct offset PLUS the array
     size_t size = offsetof(ua32, data) + sizeof(uint32_t[len]);
-    if (size < sizeof(ua32)) { size = sizeof(ua32); }
+    if (size < sizeof(ua32)) size = sizeof(ua32);
 
-    ua32* ap = calloc(1, size);
+    ua32* ap = calloc(size, 1);
     if (ap) {
-        // Takeaway 13.1.3 #2: Manually store the length to maintain consistency
+        // Takeaway 13.1.3 #2: Manually maintaining consistency
         ap->length = len;
-        ap->data[0] = 42;
-        printf("First element: %u\n", ap->data[0]);
         free(ap);
     }
     return 0;
 }
 ```
 
-## 13.2 Storage duration, lifetime, and visibility
+## 13.2. Storage duration, lifetime, and visibility
 
-Visibility dictates where a name is valid. Lifetime dictates when an object actually exists in memory.
+- Visibility (scope) and lifetime are distinct. Four storage durations exist: static, automatic, allocated, and thread.
 
-- **Takeaway 13.2 #3:** Every definition creates a new, distinct object (even if shadowed).
-- **Takeaway 13.2 #5 & #6:** Objects have a strict lifetime. Accessing an object outside its lifetime fails.
-- **Takeaway 13.2 #7:** A compound literal has the same lifetime as a variable declared in the same scope.
+**Takeaways:**
+
+- **Takeaway 13.2 #1:** Identifiers only have visibility inside their scope, starting at their declaration.
+- **Takeaway 13.2 #2:** The visibility of an identifier can be shadowed by an identifier of the same name in a subordinate scope.
+- **Takeaway 13.2 #3:** Every definition of a variable creates a new, distinct object.
+- **Takeaway 13.2 #4:** Read-only object literals may overlap.
+- **Takeaway 13.2 #5:** Objects have a lifetime outside of which they can’t be accessed.
+- **Takeaway 13.2 #6:** A program execution that refers to an object outside of its lifetime fails.
+- **Takeaway 13.2 #7:** A compound literal has the same lifetime as a variable that would be declared with the same storage class within the same context.
 
 ```c
 #include <stdio.h>
 
-void use_pointer(double* p) {
-    if (p) printf("Value: %f\n", *p);
-}
+// Static storage duration
+unsigned i = 1;
 
 int main(void) {
-    double* ptr = NULL;
-    {
-        // Lifetime of 'x' is bound to this inner block
-        double x = 35.0;
-        ptr = &x;
-        use_pointer(ptr); // Valid
+    // Takeaway 13.2 #1 & #3: New distinct object created inside this scope
+    unsigned i = 2;
+    if (i) {
+        // Takeaway 13.2 #2: Shadows the block-scope 'i', refers to global 'i'
+        extern unsigned i;
+        printf("%u\n", i); // Prints 1
     }
-    // use_pointer(ptr); // ERROR (Takeaway 13.2 #6): 'x' is dead here.
 
-    // Takeaway 13.2 #7: Compound literal bound to the main() block
-    double* p_comp = &(double){ 99.0 };
-    use_pointer(p_comp); // Valid until main() returns
+    // Takeaway 13.2 #7: Compound literal lifetime follows block scope here
+    int* p = &(int){ 5 };
+    printf("%d\n", *p);
+
+    // Takeaway 13.2 #5 & #6: Avoid accessing out-of-lifetime pointers
+    int* bad_ptr;
+    {
+        int temp = 42;
+        bad_ptr = &temp;
+    }
+    // printf("%d", *bad_ptr); // FAILURE: temp's lifetime has ended
 
     return 0;
 }
 ```
 
-## 13.2.1 Static storage duration
+## 13.2.1. Static storage duration
 
-Objects with static storage duration live for the entire program execution.
+- Objects defined in file scope and not declared with `thread_local`. Variables and compound literals can have that property.
+- Variables and compound literals defined inside a block and have the storage class specifier `static` and no additional `thread_local`.
+- String literals, which are arrays of `char` or a wide character type and always have static storage duration.
 
-- **Takeaway 13.2.1 #1:** Objects with static storage duration are _always_ initialized. If not explicitly initialized, they default to 0 (or null).
+Such objects have a lifetime that spans the entire program execution. Because they are considered alive before any application code is executed, they can only be initialized with expressions that are known at compile time or can be resolved by the system's
+process startup procedure.
+
+**Takeaway:**
+
+- **Takeaway 13.2.1 #1:** Objects with static storage duration are always initialized.
 
 ```c
 #include <stdio.h>
 
-double global_val; // File scope: implicitly 0.0
+double A = 37; // Explicitly initialized
+double* p = &(static double){ 1.0 }; // Static compound literal
 
 int main(void) {
-    // Block scope, but static lifetime: implicitly 0.0
-    static double block_static;
-
-    printf("Global: %f, Static Local: %f\n", global_val, block_static);
+    // Takeaway 13.2.1 #1: B is implicitly initialized to 0.0
+    static double B;
+    printf("B is %f\n", B);
     return 0;
 }
 ```
 
-## 13.2.2 Automatic storage duration
+## 13.2.2. Automatic storage duration
 
-Variables defined inside a block (without `static`) have automatic storage duration.
+- Local variables (without `static`). Can be heavily optimized by compilers if aliasing is restricted.
 
-- **Takeaway 13.2.2 #3, #4 & #5:** Use `register` for critical local variables. You cannot use the `&` operator on a `register` variable, preventing aliasing.
-- **Takeaway 13.2.2 #7 & #8:** Temporary objects (like arrays returned inside a struct) are read-only, and their lifetime ends immediately after the expression finishes evaluating.
+**Takeaways:**
+
+- **Takeaway 13.2.2 #1:** Unless automatic objects are VLA or temporary objects, they have a lifetime corresponding to the execution of their block of definition.
+- **Takeaway 13.2.2 #2:** Each recursive call creates a new local instance of an automatic object.
+- **Takeaway 13.2.2 #3:** The `&` operator is not allowed for objects declared with `register`.
+- **Takeaway 13.2.2 #4:** Objects declared with `register` can't alias.
+- **Takeaway 13.2.2 #5:** Declare local variables that are not arrays in performance-critical code as `register`.
+- **Takeaway 13.2.2 #6:** Arrays with storage class `register` are useless.
+- **Takeaway 13.2.2 #7:** Objects of temporary lifetime are read-only.
+- **Takeaway 13.2.2 #8:** Temporary lifetime ends at the end of the enclosing full expression.
 
 ```c
 #include <stdio.h>
 
 struct demo { unsigned ory[1]; };
-struct demo get_demo(void) {
+struct demo mem(void) {
     return (struct demo){ .ory = {42} };
 }
 
-int main(void) {
-    // Takeaway 13.2.2 #5: register keyword for optimization
-    register int counter = 0;
-    counter++;
-    // int* p = &counter; // ERROR (Takeaway 13.2.2 #3): Cannot take address
+void recurse(int depth) {
+    // Takeaway 13.2.2 #1 & #2: local_var has automatic lifetime, new instance per call
+    int local_var = depth;
+    if (depth > 0) recurse(depth - 1);
+}
 
-    // Takeaway 13.2.2 #7 & #8: get_demo().ory is a temporary read-only object.
-    // It dies completely on the next line.
-    printf("Temporary: %u\n", get_demo().ory[0]);
+int main(void) {
+    // Takeaway 13.2.2 #3, #4, #5: Use register for performance-critical scalars. Cannot take address.
+    register int fast_counter = 0;
+    fast_counter++;
+
+    // Takeaway 13.2.2 #7 & #8: Temporary lifetime object array access. Read-only. Lifetime ends after printf.
+    printf("mem().ory[0] is %u\n", mem().ory[0]);
 
     return 0;
 }
 ```
 
-## 13.3 Object Lifetime
+## 13.3. Digression: using objects before their definition
 
-Understanding exactly _when_ an object starts and stops existing is vital, especially inside loops and with Variable Length Arrays (VLAs).
+- Explains edge cases where a block-scope object exists conceptually before its declaration is executed due to how the scope is entered.
 
-- **Takeaway 13.3 #1 & #2:** For standard block variables and compound literals, lifetime starts when the block scope is entered. Initializers are evaluated _each time_ the definition is met.
-- **Takeaway 13.3 #3:** For a VLA, lifetime starts only when the declaration is _encountered_ during execution.
+**Takeaways:**
+
+- **Takeaway 13.3 #1:** For an object that is not a VLA, lifetime starts when the scope of the definition is entered, and it ends when that scope is left.
+- **Takeaway 13.3 #2:** Initializers of automatic variables and compound literals are evaluated each time the definition is met.
+- **Takeaway 13.3 #3:** For a VLA, lifetime starts when the definition is encountered and ends when the visibility scope is left.
 
 ```c
 #include <stdio.h>
 
 int main(void) {
-    for (int i = 0; i < 3; i++) {
-        // Takeaway 13.3 #2: This compound literal is evaluated and initialized
-        // to a new value (0, 1, 2) on EVERY iteration.
-        size_t* ip = &(size_t){ i };
-        printf("%zu ", *ip);
-    }
-    printf("\n");
+    int j = 0;
+    // Takeaway 13.3 #1: 'x' lifetime starts at the beginning of the block, even though defined below.
+    goto SKIP_INIT;
+
+    int x = 42;
+
+SKIP_INIT:
+    // This is valid memory, but uninitialized because we skipped the initializer line.
+    x = 10;
+
+    // Takeaway 13.3 #2: If we looped back, the initializer would run each time.
+    printf("x is %d\n", x);
+
     return 0;
 }
 ```
 
-## 13.4 Initialization
+## 13.4. Initialization
 
-C does not automatically clean up memory for you unless it's static/global.
+- Summarizes initialization state based on storage duration and promotes consistent patterns.
 
-- **Takeaway 13.4 #1 & #2:** Static objects default to 0. Automatic (local) and allocated (`malloc`) objects _must_ be initialized explicitly by you.
-- **Takeaway 13.4 #3:** Systematically provide a dedicated initialization function (e.g., `type_init`) for your complex data types.
+**Takeaways:**
+
+- **Takeaway 13.4 #1:** Objects of static or thread-storage duration are initialized by default.
+- **Takeaway 13.4 #2:** Objects of automatic or allocated storage duration must be initialized explicitly.
+- **Takeaway 13.4 #3:** Systematically provide an initialization function for each of your data types.
 
 ```c
 #include <stdlib.h>
-#include <stdio.h>
 
-typedef struct {
-    long long numerator;
-    unsigned long long denominator;
-} rat;
+typedef struct rat rat;
+struct rat { int num, den; };
 
-// Takeaway 13.4 #3: Systematic initialization function
-rat* rat_init(rat* p, long long num, unsigned long long den) {
+// Takeaway 13.4 #3: Systematically provide an init function
+rat* rat_init(rat* p, int num, int den) {
     if (p) {
-        p->numerator = num;
-        p->denominator = den;
+        p->num = num;
+        p->den = den;
     }
-    return p; // Return the pointer to allow chaining
+    return p;
 }
 
-int main(void) {
-    // Takeaway 13.4 #2: Explicitly initializing dynamically allocated memory
-    rat* my_rat = rat_init(malloc(sizeof(rat)), 13, 7);
+static rat global_rat; // Takeaway 13.4 #1: Initialized by default (0, 0)
 
-    if (my_rat) {
-        printf("Ratio: %lld/%llu\n", my_rat->numerator, my_rat->denominator);
-        free(my_rat);
-    }
+int main(void) {
+    rat local_rat; // Takeaway 13.4 #2: Uninitialized! Must explicitly initialize.
+    rat_init(&local_rat, 1, 2);
+
+    rat* alloc_rat = malloc(sizeof(rat)); // Also uninitialized
+    rat_init(alloc_rat, 3, 4);
+
+    free(alloc_rat);
     return 0;
+}
+```
+
+## 13.5. Digression: A machine model
+
+- Provides a glimpse into how C programs map to actual hardware execution (like x86_64 architecture).
+- Functions utilize a reserved memory area called "the stack" to hold local variables.
+- Stack layout uses registers (like `%rbp`) to manage addresses via negative offsets (e.g., `-36(%rbp)`).
+- Automatic variables spring to life simply by the compiler adjusting the stack pointer when a function is entered.
+- No explicit takeaways are numbered in this section, but the core concept is understanding that C's abstract machine memory model maps efficiently onto physical Von Neumann architectures (Registers, Stack, RAM).
+
+```c
+int fgoto(int n) {
+    // Concept: The machine creates 'n' and 'x' on the call stack.
+    // They are accessed via offsets from the base pointer register.
+    int x = n * 2;
+    return x;
 }
 ```
