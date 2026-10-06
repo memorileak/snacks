@@ -4,7 +4,7 @@ description = "A guide to the C23 memory model, covering object representations,
 date = 2026-09-28T04:47:32Z
 
 [taxonomies]
-tags = ["modernc"]
+tags = ["modernc", "object", "cast", "union", "alignment", "voidpointer", "unsignedchar"]
 
 [extra]
 math = true

@@ -4,7 +4,7 @@ description = "An overview of C23 pointers, covering address and dereference ope
 date = 2026-09-28T04:05:59Z
 
 [taxonomies]
-tags = ["modernc"]
+tags = ["modernc", "pointer"]
 
 [extra]
 math = true
