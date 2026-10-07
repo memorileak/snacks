@@ -8,23 +8,40 @@ description = "Several prompts for the Gemini tool"
 tags = ["gemini", "prompt"]
 +++
 
-## Generating study notes from a chapter in a book
+## Notebook Settings Instructions
 
-Given that I am a student learning modern C via "Modern C: A Guide to the C23 Standard".
-I am reading "Chapter 12. The C memory model".
-Please help me by generating a study note in a **MARKDOWN FILE** following these strict rules:
+I am a student learning modern C via "Modern C: A Guide to the C23 Standard".
 
-1. **Exhaustive Coverage (Do Not Omit Sections):**
-   - Iterate chronologically through **every single section and subsection** of the chapter.
-   - Extract **every** major concept presented in the text.
-   - Extract **every** explicit "Takeaway" rule.
-   - **DO NOT SKIP** any major concepts or takeaways to save space.
+When I ask for a **Chapter Study Note**, please generate a **detailed, in-depth study note** as a **MARKDOWN FILE** following these strict rules.
+The note should be thorough enough that I could learn the chapter from it without re-reading the book.
+Aim for depth over brevity: a long, rich note is expected and desired. Do NOT summarize or compress.
 
-2. **Formatting & Style:**
-   - Format each section in the chapter as a `## H2` header.
-   - Conciseness applies to your **writing style**, not the **content coverage**. Use brief, direct bullet points for the explanations, but ensure 100% of the chapter's sections are covered.
+1. **Exhaustive Coverage (Do Not Omit Anything):**
+   - Go chronologically through **every section and subsection** of the chapter.
+   - Cover **every** concept, term, definition, rule, caveat, and edge case the text presents.
+   - Reproduce **every** explicit "Takeaway" verbatim (as a blockquote), then explain it. Do not skip any explicit "Takeaway".
+   - Do not skip or merge topics to save space.
+
+2. **Structure (for each section):**
+   - Use a `## H2` header per chapter section and `### H3` headers per subsection or major concept.
+   - Under each concept, include:
+     - **What it is:** a clear explanation in 2-5 full sentences (not just fragments).
+     - **Why it matters / how it works:** the reasoning, motivation, and underlying mechanics (e.g. what the compiler/CPU/standard does).
+     - **Key details:** bullet points for rules, syntax, constraints, and edge cases.
+     - **Pitfalls:** common mistakes, undefined/unspecified behavior, and gotchas mentioned or implied by the book.
+     - **Connections:** links to related concepts in this or earlier chapters.
+   - Define every technical term the first time it appears.
+   - End each section with a short "Recap" of 2-4 bullets.
 
 3. **Code Demonstrations:**
-   - For each major concept and takeaway, write a C example code snippet demonstrating it.
-   - Prefer taking the examples directly from the book if possible. If no example exists for a specific takeaway, generate a highly relevant, compilable C snippet.
-   - The code must contain inline comments explaining exactly how it maps to the specific takeaway it demonstrates.
+   - For each concept and takeaway, give a complete, compilable C23 example.
+   - Prefer the book's own examples; if none exists, write a relevant one.
+   - Add inline comments explaining line by line how the code demonstrates the specific concept or takeaway.
+   - After each snippet, add a short "Expected behavior/output" note, and where useful a "What goes wrong if..." counter-example.
+
+4. **Closing Sections:**
+   - End with `## Summary` (a paragraph-level overview of the chapter) and `## Self-Check Questions` (8-12 questions that test understanding, with brief answers).
+
+5. **Length and Quality:**
+   - Do not stop early. If you run out of space, continue until every section is covered, and tell me where you stopped so I can say "continue".
+   - Prefer explaining accurately over being short. Do not invent content not supported by the book or the C standard.
