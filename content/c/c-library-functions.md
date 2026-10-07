@@ -11,327 +11,485 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-Chapter 8 of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, titled **"C library functions,"** covers the essential building blocks provided by the C standard library. The standard functionality is divided into the core language features and the **C library**, which provides platform abstraction, input/output, numerical processing, string manipulation, and runtime diagnostics.
+The C standard is divided into two major components: the core C language and the C library. The library provides fundamental tools and features essential for everyday programming, ensuring standardized interfaces and portability across different platforms. By offering a clear application programming interface (API), it allows the separation of the compiler implementation (such as gcc or clang) from the library implementation (such as glibc, dietlibc, or musl).
 
-Below is a detailed breakdown of the most important concepts, library header files, and key takeaways from Chapter 8, organized by section.
+## 8.1. General properties of the C library and its functions
 
+### 8.1.1. Headers
 
-### 1. General Properties, Error Checking, & Preconditions (Section 8.1)
+**What it is:**
+The C library encompasses a vast array of functions whose interface descriptions are bundled into files known as **headers**. These header files organize related features and functions so they can be easily included in a program.
 
-* **Platform Abstraction Layer:** The C library acts as an abstraction layer over platform-specific hardware and OS mechanics (such as terminal output, file handling, or system clocks) that would otherwise require low-level system code.
-* **Function-Like Macros:** Many library interfaces are implemented as function-like macros for efficiency (e.g., `putchar(A)` mapped to `putc(A, stdout)`).
-* **Error Signaling Conventions:** C library functions signal errors using standardized return values:
-  * **Null pointers (`nullptr`):** Returned by stream creation functions like `fopen` on failure.
-  * **Special error values:** Such as `EOF` (-1) returned by stream output functions like `puts` and `fputc`.
-  * **`errno` & `perror`:** The global error tracking variable `errno` (from `<errno.h>`) records diagnostic codes, which `perror("msg")` prints as human-readable error messages.
-* **Error Handling Takeaways:**
-  * **Takeaway 8.1.3 #1:** *Failure is always an option*.
-  * **Takeaway 8.1.3 #2:** *Check the return value of library functions for errors*.
-  * **Takeaway 8.1.3 #3:** *Fail fast, fail early, and fail often*.
-* **Bounds-Checking Interfaces (Annex K):** C11 introduced optional runtime bounds-checking functions (e.g., `printf_s`, `fopen_s`) guarded by `__STDC_LIB_EXT1__`.
-  * **Takeaway 8.1.4 #1:** *Identifier names terminating with `_s` are reserved*.
-* **Platform Preconditions & Preprocessor Conditionals:**
-  * **Takeaway 8.1.5 #1:** *Missed preconditions for the execution platform must abort compilation* (using `#if` and `#error`).
-  * **Takeaway 8.1.5 #2:** *In a preprocessor conditional, only evaluate macros and integer literals*.
-  * **Takeaway 8.1.5 #3:** *In a preprocessor conditional, unknown identifiers evaluate to 0*.
+**Why it matters / how it works:**
+By standardizing these interfaces, headers act as a platform abstraction layer. They abstract away platform-specific needs (like basic IO operations) that require deep, OS- or processor-specific knowledge to implement.
 
-#### Example
+**Key details:**
 
-C library functions signal errors using special return values (such as `nullptr` or `EOF`) or by setting the global state `errno`. Gustedt emphasizes three golden rules: **failure is always an option**, **always check return values**, and **fail fast, fail early**.
+- Headers bundle function interfaces logically (e.g., `<stdio.h>` for input/output, `<math.h>` for numerics, `<time.h>` for time manipulation).
+- Standard headers include `<stdbool.h>` for booleans, `<stdint.h>` for exact-width integer types, and `<stdlib.h>` for basic functions.
+- C23 introduces new headers such as `<stdbit.h>` for bit operations and `<stdckdint.h>` for checked integer arithmetic.
 
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
+**Pitfalls:**
 
-// Takeaway 8.1.5 #1: Missed platform preconditions must abort compilation
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ < 202311L)
-  #warning "This code utilizes C23 library features!"
-#endif
+- Failing to include the appropriate header can lead to undefined behavior or compilation errors because the compiler will lack the necessary interface descriptions for the functions used.
 
-// Takeaway 8.1.4 #1: Identifiers terminating with _s are reserved (Annex K)
-void demo_error_handling(void) {
-    // Attempting to open a non-existent file
-    FILE* stream = fopen("non_existent_file.txt", "r");
+### 8.1.2. Interfaces
 
-    // Takeaway 8.1.3 #2: Always check the return value of library functions
-    if (!stream) {
-        // perror() prints custom string + human-readable error based on 'errno'
-        perror("Error opening file"); // e.g., "Error opening file: No such file or directory"
+**What it is:**
+Interfaces in the C library are primarily specified as functions, but implementations are permitted to realize them as **function-like macros** where appropriate. A function-like macro is a syntactic construct that resembles a function but is implemented via textual replacement.
 
-        // Reset errno after handling if recovering (Takeaway 8.1.3 #3)
-        errno = 0;
-    } else {
-        fclose(stream);
-    }
-}
-```
+**Why it matters / how it works:**
+A macro replaces text directly during preprocessing. For instance, `putchar(A)` could be defined as `#define putchar(A) putc(A, stdout)`.
 
-### 2. Integer Arithmetic & Bit Operations (Section 8.2)
+**Key details:**
 
-* **Standard Arithmetic (`<stdlib.h>`):** Provides `abs`, `labs`, `llabs` for absolute values and `div`, `ldiv`, `lldiv` to compute integer quotient and remainder simultaneously.
-* **C23 Checked Integer Arithmetic (`<stdckdint.h>`):** Introduces type-generic macros `ckd_add`, `ckd_sub`, and `ckd_mul`. They perform addition, subtraction, or multiplication while returning a boolean flag indicating if an arithmetic overflow occurred.
-* **C23 Bit Operations (`<stdbit.h>`):** Standardizes bitwise inspection and manipulation for unsigned integer types:
-  * **Type-Independent Macros:** `stdc_count_ones` (popcount), `stdc_bit_width`, `stdc_bit_floor`, `stdc_has_single_bit`, `stdc_first_trailing_one`, `stdc_first_trailing_zero`.
-  * **Type-Width Dependent Macros:** `stdc_bit_ceil`, `stdc_count_zeros`, `stdc_leading_zeros`, `stdc_leading_ones`, `stdc_trailing_zeros`.
+- Function-like macros behave structurally like functions but are strictly textual replacements.
 
-#### Example
+**Pitfalls:**
 
-C23 introduces `<stdckdint.h>` for overflow-safe checked integer arithmetic and `<stdbit.h>` for type-generic, platform-optimized bit manipulation.
+- Because macros substitute text, an argument passed to a macro might be evaluated multiple times if it appears multiple times in the replacement text.
+- Passing an expression with side effects to a macro can lead to unpredictable state changes.
+
+### 8.1.3. Error checking
+
+**What it is:**
+C library functions typically indicate failure by returning a special value, though the specific value varies depending on the function. The C standard also maintains a global state variable, `errno`, to track errors for certain functions.
+
+**Why it matters / how it works:**
+Proper error handling ensures that bugs are detected early and program integrity is maintained. Functions might return a null pointer, a special error code (like `EOF`), a nonzero value, or a special success code depending on their design.
+
+> Takeaway 8.1.3 #2 _Check the return value of library functions for errors._
+
+By verifying return values immediately, developers can intercept failures before they cause cascading issues in the abstract state machine.
+
+> Takeaway 8.1.3 #3 _Fail fast, fail early, and fail often._
+
+Immediate program failure upon encountering an error is frequently the most effective way to detect and rectify bugs early in the development lifecycle.
+
+**Key details:**
+
+- `fopen` returns a null pointer on failure.
+- Functions like `puts`, `clock`, `mktime`, `strtod`, and `fclose` return a special error code.
+- `fgetpos` and `fsetpos` return a nonzero value on failure.
+- `thrd_create` returns a special success code.
+- `perror` utilizes the `errno` state to provide diagnostic error messages.
+
+**Pitfalls:**
+
+- If a function fails but the program recovers, `errno` must be manually reset to `0`; otherwise, subsequent library function calls or error checks might misinterpret the stale error state.
+
+### 8.1.4. Bounds-checking interfaces
+
+**What it is:**
+Many standard C functions are susceptible to **buffer overflow** vulnerabilities if invoked with inconsistent parameters. To address this, C provides optional bounds-checking interfaces specified in Annex K.
+
+**Why it matters / how it works:**
+These functions are designed to mitigate security bugs and exploits by verifying that passed arguments (like pointers) are valid and consistent.
+
+> Takeaway 8.1.4 #1 _Identifier names terminating with_ `_s` _are reserved._
+
+Because bounds-checking functions (e.g., `printf_s` replacing `printf`) use the `_s` suffix, programmers must not use this suffix for their own identifiers to avoid collisions.
+
+**Key details:**
+
+- Bounds-checking functions generally mirror standard functions but append `_s` to the name (e.g., `fopen_s`).
+- If these functions detect an inconsistency, known as a **runtime constraint violation**, they typically terminate program execution after outputting a diagnostic message.
+
+### 8.1.5. Platform preconditions
+
+**What it is:**
+While C prioritizes portability, code sometimes relies on specific execution platform characteristics. Preprocessor conditionals allow programs to assert platform properties at compile time.
+
+> Takeaway 8.1.5 #2 _In a preprocessor conditional, only evaluate macros and integer literals._
+
+> Takeaway 8.1.5 #3 _In a preprocessor conditional, unknown identifiers evaluate to 0._
+
+These rules govern how `#if` and `#ifdef` statements evaluate conditions before the code is actually compiled.
+
+**Recap:**
+
+- Header files define the API for C library functions, abstracting platform-specific operations.
+- Interfaces may be functions or function-like macros, which require care to avoid multiple evaluations of side effects.
+- Return values must be checked constantly to fail fast, and `errno` must be managed carefully.
+- Annex K provides `_s` suffixed functions to protect against buffer overflows.
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
 #include <stdbool.h>
-#include <limits.h>
-
-// Included feature test checking for C23 headers
-#if __has_include(<stdckdint.h>)
-  #include <stdckdint.h> // ckd_add, ckd_sub, ckd_mul
-#endif
-
-#if __has_include(<stdbit.h>)
-  #include <stdbit.h>    // stdc_count_ones, stdc_bit_width, stdc_has_single_bit
-#endif
-
-void demo_checked_arithmetic_and_bits(void) {
-    // 1. CHECKED INTEGER ARITHMETIC (<stdckdint.h>):
-    // Performs addition; returns 'true' if overflow occurred, storing wrap-around result in target.
-    unsigned int res = 0;
-    bool overflow = ckd_add(&res, UINT_MAX, 1U); // UINT_MAX + 1 overflows unsigned range
-
-    printf("ckd_add overflow: %s, wrapped result: %u\n",
-           overflow ? "true" : "false", res); // Output: true, 0
-
-    // 2. C23 TYPE-GENERIC BIT OPERATIONS (<stdbit.h>):
-    unsigned int mask = 0b0000'0000'1001'0100U; // Value 148 (3 bits set)
-
-    // stdc_count_ones (popcount): Type-independent population count of 1-bits
-    printf("1-bits count in %u: %unsigned\n", mask, stdc_count_ones(mask)); // 3
-
-    // stdc_has_single_bit: Checks if value is a power of two
-    printf("Is 16 a power of 2? %s\n", stdc_has_single_bit(16U) ? "yes" : "no");
-
-    // stdc_bit_width: Computes minimum bit-width needed to store value (1 + floor(log2(x)))
-    printf("Bit width needed for %u: %unsigned\n", mask, stdc_bit_width(mask));
-}
-```
-
-### 3. Numerics & Floating-Point Mathematics (Section 8.3)
-
-* **Type-Generic Math (`<tgmath.h>`):** Wraps functions from `<math.h>` and `<complex.h>` into type-generic macros that automatically dispatch calls based on whether the arguments are `float`, `double`, or `long double`.
-* **Hardware Acceleration:** Functions like `sqrt`, `sin`, `fabs`, `fma` (fused multiply-add), and rounding utilities (`round`, `trunc`, `lround`, `llround`) bind directly to fast processor-specific instructions; re-implementing them manually in user code is discouraged.
-
-#### Example
-
-Using `<tgmath.h>` provides type-generic mathematical macros that automatically dispatch to the correct float, double, or long double implementations without manual function suffixes (e.g., `sin()` instead of `sinf()` or `sinl()`).
-
-```c
-#include <stdio.h>
-#include <tgmath.h> // Wraps <math.h> and <complex.h> with type-generic macros
-
-void demo_type_generic_math(void) {
-  float f = 2.0f;
-  double d = 2.0;
-
-  // Automatic macro dispatch based on argument type:
-  // Calling sqrt(f) dispatches to sqrtf(); sqrt(d) dispatches to sqrt()
-  float res_f = sqrt(f);
-  double res_d = sqrt(d);
-
-  // Hardware-accelerated fused multiply-add: fma(x, y, z) computes (x * y) + z in one step
-  double fma_res = fma(3.0, 4.0, 5.0); // 3*4 + 5 = 17.0
-
-  printf("sqrt(2.0f) = %f, sqrt(2.0) = %g, fma = %g\n", res_f, res_d, fma_res);
-}
-```
-
-### 4. Input, Output, and File Manipulation (Section 8.4)
-
-* **Unformatted Text Output:**
-  * `putchar(c)` outputs a single character to `stdout`.
-  * `puts(s)` writes string `s` followed by an automatic newline `'\n'` to `stdout`.
-  * `fputc(c, stream)` and `fputs(s, stream)` write to an explicit file stream; `fputs` **does not** automatically append a newline.
-  * **Takeaway 8.4.1 #1 & #2:** `FILE` is an opaque type; do not rely on implementation details.
-  * **Takeaway 8.4.1 #3:** `puts` and `fputs` differ in their end-of-line handling.
-* **Files and Streams (`<stdio.h>`):**
-  * Files are attached using `fopen(filename, mode)`. Common base modes are `"r"` (read), `"w"` (truncate/write), `"a"` (append), modified by `"+"` (update/rw), `"b"` (binary), or `"x"` (exclusive creation).
-* **Formatted Output (`printf`, `fprintf`, `sprintf`, `snprintf`):**
-  * `printf` writes to `stdout`; `fprintf` writes to an explicit `FILE*` stream (e.g., `stderr`).
-  * **Format Specifiers:** `%zu` for `size_t`, `%td` for `ptrdiff_t`, `%d`/`%u` for signed/unsigned integers, `%b`/`%x` for binary/hexadecimal bit patterns, `%g` for floating-point, and `%a` for exact hex floating-point.
-  * **Takeaway 8.4.4 #5:** *Using an inappropriate format specifier or modifier makes the behavior undefined*.
-  * **Buffer Safety:** `sprintf` does not prevent buffer overflows; use `snprintf` (or `snprintf_s`) to bound the maximum written characters.
-* **Unformatted Text Input:**
-  * `fgetc(stream)` reads a single character and returns an `int` so it can represent the `EOF` error/end-of-file condition.
-  * `fgets(buf, n, stream)` reads up to `n-1` characters safely into a buffer.
-  * **Takeaway 8.4.5 #1:** *Don’t use `gets`* (removed from the standard because it cannot prevent buffer overflows).
-  * **Takeaway 8.4.5 #3:** *End-of-file can only be detected after a failed read* (using `feof(stream)`).
-
-#### Example
-
-`<stdio.h>` provides file stream I/O. Gustedt highlights key formatting rules: format specifiers must strictly match argument types, and portable numeric conversions should use `%+d`, `%#X`, or `%a`.
-
-```c
-#include <stdio.h>
-#include <stddef.h>
-
-void demo_stdio_and_formatting(void) {
-    // 1. UNFORMATTED TEXT OUTPUT:
-    // puts(s) automatically appends a newline '\n'; fputs(s, stream) DOES NOT.
-    puts("puts() adds newline automatically."); // Takeaway 8.4.1 #3
-    fputs("fputs() requires manual newline!\n", stdout);
-
-    // 2. FORMAT SPECIFIERS & MODIFIERS:
-    size_t len = 255;
-    ptrdiff_t diff = -10;
-    double fp = 3.14159;
-
-    // Specifiers: %zu for size_t, %td for ptrdiff_t, %g for general float
-    // Takeaway 8.4.4 #1 & #5: Arguments must match format specifiers exactly!
-    printf("size_t: %zu, ptrdiff_t: %td, double: %g\n", len, diff, fp);
-
-    // Takeaway 8.4.4 #6: Use %#X (hex with prefix) and %a (hex float) for exact round-trips
-    printf("Round-trip format: %#X, Hex float: %a\n", (unsigned int)len, fp);
-
-    // 3. BOUNDED BUFFER PRINTING:
-    // snprintf prevents buffer overflows by bounding output to buffer capacity
-    char buf = {};
-    snprintf(buf, sizeof buf, "Formatted value: %d", 42);
-    puts(buf);
-}
-```
-
-### 5. String Processing & Conversions (Section 8.5)
-
-* **Character Classification (`<ctype.h>`):** Functions like `isalnum`, `isalpha`, `isdigit`, `isspace`, `islower`, `isupper` classify single characters, while `toupper` and `tolower` perform case conversions.
-* **String-to-Number Conversions (`<stdlib.h>`):**
-  * `strtod`, `strtof`, `strtold` convert text strings into floating-point numbers.
-  * `strtoul`, `strtol`, `strtoull`, `strtoll` parse integer strings in bases `0`, `2`, `8`, `10`, or `16`.
-  * Setting `base = 0` automatically interprets prefixes like `"0b"` (binary), `"0"` (octal), or `"0x"` (hexadecimal). Out-of-range values return `ULONG_MAX`/`LLONG_MAX` and set `errno` to `ERANGE`.
-* **String Manipulation (`<string.h>`):**
-  * `strlen(s)` computes string length up to the first `0` character.
-  * `strcpy` / `memcpy` copy string or raw memory regions.
-  * `strcmp` / `memcmp` compare strings or byte buffers lexicographically.
-  * `strspn` returns length of matching initial characters; `strcspn` returns length of non-matching initial characters.
-  * `strdup` / `strndup` allocate dynamic memory for a string copy.
-
-#### Example
-
-`<ctype.h>` provides character classifiers. `<stdlib.h>` conversion functions (`strtoul`, `strtod`) parse strings into numbers; setting `base = 0` automatically interprets prefixes like `"0b"` (binary), `"0x"` (hex), or `"0"` (octal).
-
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <string.h>
 #include <errno.h>
 
-void demo_string_processing(void) {
-    // 1. CHARACTER CLASSIFICATION (<ctype.h>):
-    char c = 'a';
-    if (islower(c)) {
-        printf("'%c' upper-cased is '%c'\n", c, toupper(c));
+// Demonstrating Takeaway 8.1.3 #2 and #3, and proper errno handling.
+void puts_safe(char const s[static 1]) {
+    static bool failed = false;
+    // Check return value against EOF to handle potential output errors
+    if (!failed && puts(s) == EOF) {
+        perror("can't output to terminal:"); // Uses errno under the hood
+        failed = true;
+        errno = 0; // Reset error state so future calls aren't confused
     }
-
-    // 2. STRING-TO-NUMBER CONVERSIONS (<stdlib.h>):
-    // Base 0 automatically detects prefixes: "0b1010" -> binary, "0xFF" -> hex, "123" -> decimal
-    char const* bin_str = "0b1010";
-    char const* hex_str = "0x1A";
-
-    unsigned long val1 = strtoul(bin_str, nullptr, 0); // Parsed as binary 10
-    unsigned long val2 = strtoul(hex_str, nullptr, 0); // Parsed as hex 26
-
-    printf("Parsed '%s' -> %lu, '%s' -> %lu\n", bin_str, val1, hex_str, val2);
-
-    // 3. STRING SPAN FUNCTIONS (<string.h>):
-    char const* text = "12345abc";
-    // strspn returns length of initial segment containing ONLY characters from search set
-    size_t num_digits = strspn(text, "0123456789"); // Yields 5 ('12345')
-    printf("Initial digit span length: %zu\n", num_digits);
 }
+
+int main(void) {
+    puts_safe("Hello, secure world!");
+    return 0;
+}
+
 ```
 
-### 6. Time & Runtime Environment (Sections 8.6 & 8.7)
+_Expected behavior:_ The string is printed to the terminal. If standard output is unexpectedly closed (causing `puts` to return `EOF`), it prints an error message and safely resets `errno`.
 
-* **Time Processing (`<time.h>`):**
-  * `clock()` returns CPU processor time used by the program.
-  * `time()` returns simple calendar time in seconds since the Epoch.
-  * `difftime(t1, t0)` calculates time differences in seconds as a `double`.
-  * `timespec_get(&ts, TIME_UTC)` returns high-resolution time with nanosecond precision.
-  * `strftime` formats date and time structures (`struct tm`) into custom text strings.
-* **Environment & Localization:**
-  * `getenv("NAME")` and `getenv_s` inspect platform environment variables.
-  * `setlocale(category, locale)` configures locale-specific formatting (such as decimal points or character collating sequences) from `<locale.h>`.
+---
 
-#### Example
+## 8.2. Integer arithmetic
 
-`<time.h>` provides calendar time (`time_t`, `struct tm`) and high-resolution nanosecond timestamps (`struct timespec` via `timespec_get`).
+**What it is:**
+While standard operators handle most integer arithmetic, the C library provides additional functions in headers like `<stdbit.h>` for specialized bit-level operations and functions for cases requiring overflow detection.
+
+**Why it matters / how it works:**
+These functions allow for explicit and safe calculations, particularly in C23, which introduced new type-generic macros for bit manipulation. Hardware may implement these via specific instructions, but the standard library guarantees defined results for all arguments, relieving the programmer from handling edge cases.
+
+**Key details:**
+
+- Functions like `abs`, `labs`, and `llabs` calculate the absolute value `|x|`.
+- Checked arithmetic functions like `ckd_add`, `ckd_sub`, and `ckd_mul` perform operations and yield an overflow flag.
+- `<stdbit.h>` includes type-generic macros whose results are independent of the argument type, such as `stdc_bit_floor`, `stdc_bit_width`, `stdc_count_ones`, `stdc_has_single_bit`, `stdc_first_trailing_one`, and `stdc_first_trailing_zero`.
+- Other functions depend on the width of the argument type, such as `stdc_bit_ceil`, `stdc_count_zeros`, and `stdc_leading_zeros`.
+
+**Pitfalls:**
+
+- The results of width-dependent functions (`stdc_count_zeros`, `stdc_leading_ones`, etc.) can be difficult for code readers to interpret across different platforms; they should be avoided if possible in favor of type-independent variants.
+
+**Recap:**
+
+- The C library extends basic arithmetic operators with specialized functions for absolute values, division, and checked operations.
+- C23's `<stdbit.h>` provides extensive bit manipulation macros.
+- Type-generic bit functions are preferred over width-dependent ones for readability and portability.
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
-#include <time.h>
+#include <stdbit.h> // Requires C23
 
-void demo_time_processing(void) {
-    // 1. CALENDAR TIME & FORMATTING:
-    time_t now = time(nullptr); // Current timestamp in seconds since Epoch
-    struct tm local_time = {};
+int main(void) {
+    unsigned int val = 0b01011000;
 
-    // Thread-safe conversion to local calendar time struct
-    localtime_r(&now, &local_time);
+    // Type-independent macro usage
+    int ones = stdc_count_ones(val);
+    // stdc_first_trailing_zero returns 1 plus the index of the LS 0-bit
+    int trail_zero = stdc_first_trailing_zero(val);
 
-    char time_str = {};
-    // strftime formats calendar structs using standard specifiers (%Y-%m-%d %H:%M:%S)
-    strftime(time_str, sizeof time_str, "%Y-%m-%d %H:%M:%S", &local_time);
-    printf("Current Local Time: %s\n", time_str);
-
-    // 2. HIGH-RESOLUTION NANOSECOND TIME (timespec_get):
-    struct timespec ts = {};
-    if (timespec_get(&ts, TIME_UTC) == TIME_UTC) { // Earth reference time
-        printf("UTC Time: %ld sec, %ld nsec\n", (long)ts.tv_sec, ts.tv_nsec);
-    }
+    printf("Value has %d ones.\n", ones);
+    return 0;
 }
+
 ```
 
-### 7. Program Termination & Assertions (Section 8.8)
+_Expected behavior:_ Computes that `0b01011000` has 3 set bits.
 
-* **Program Termination Paths:**
-  * **Takeaway 8.8 #1:** *Regular program termination should use a `return` from `main`*.
-  * **Takeaway 8.8 #2:** *Use `exit` from a function that may terminate the regular control flow*.
-  * `quick_exit(status)` terminates without running full library exit handlers (e.g., `atexit`).
-  * `_Exit(status)` terminates immediately at the OS level.
-  * `abort()` triggers abnormal program termination, raising `SIGABRT` without executing standard cleanup handlers.
-* **Runtime Assertions (`<assert.h>`):**
-  * The `assert(cond)` macro evaluates boolean conditions at runtime during development. If `cond` is false, it prints a diagnostic message containing file, function, and line numbers, then calls `abort()`.
-  * **Takeaway 8.8 #4:** *Use as many `asserts` as you can to confirm runtime properties*.
-  * **Takeaway 8.8 #5:** *In production compilations, use `NDEBUG` to switch off all `asserts`* (defined via compiler flag `-DNDEBUG`).
+---
 
-#### Example
+## 8.3. Numerics
 
-Program execution should normally terminate via a `return` from `main()`. Functions terminating control flow early use `exit()`, while development preconditions are checked using `assert()`.
+**What it is:**
+Numerical functions are provided via `<math.h>`, but C offers type-generic macros in `<tgmath.h>` to simplify their usage.
+
+**Why it matters / how it works:**
+Instead of memorizing and calling `cosf` for floats, `cos` for doubles, and `cosl` for long doubles, `<tgmath.h>` dispatches a single macro invocation (e.g., `sin(x)`) to the appropriate function based on the argument's type, returning a value of that identical type.
+
+**Key details:**
+
+- Provides trigonometric functions (`acos`, `asin`, `atan2`), hyperbolic functions (`acosh`, `asinh`), and newly in C23, variants divided by $\pi$ (`acospi`, `asinpi`).
+- Includes utility math like `fma` (floating-point multiply-add), `fmax`, `fminimum`, `fmod`, and rounding functions.
+- `frexp` separates a floating point into its significand and exponent.
+
+**Recap:**
+
+- `<math.h>` provides the underlying math functions.
+- `<tgmath.h>` provides type-generic macros that automatically select the correct function variant based on the passed type.
+
+---
+
+## 8.4. Input, output, and file manipulation
+
+### 8.4.1. Unformatted text output
+
+**What it is:**
+The `<stdio.h>` header provides basic tools for output. `putchar` writes a single character, while `puts` writes a string followed by a newline. These operate on opaque standard streams like `stdout` and `stderr`.
+
+**Why it matters / how it works:**
+`stdout` is meant for standard output, while `stderr` is for urgent or error output; having both allows the program to separate standard results from diagnostics.
+
+> Takeaway 8.4.1 #1 _Opaque types are specified through functional interfaces._
+
+> Takeaway 8.4.1 #2 _Don't rely on implementation details of opaque types._
+
+The `FILE` type representing streams is opaque; you interact with it entirely via functions without directly accessing its internal struct members.
+
+> Takeaway 8.4.1 #3 `puts` _and_ `fputs` _differ in their end-of-line handling._
+
+While `puts(s)` appends a newline character automatically to standard output, `fputs(s, stream)` writes the exact string without appending an additional newline.
+
+### 8.4.2. Files and streams
+
+**What it is:**
+To interact with external files, they must be attached to the program via `fopen`, which links a file to a `FILE*` stream based on specific mode strings.
+
+**Key details:**
+
+- Base modes: `'r'` (read; file unmodified, starts at beginning), `'w'` (write; wipes file content, starts at beginning), `'a'` (append; file unmodified, starts at end).
+- Modifiers: `'+'` (update; opens for both reading and writing), `'b'` (binary), `'x'` (exclusive; creates file for writing only if it doesn't exist).
+- Bounds-checking versions `fopen_s` and `freopen_s` ensure valid pointer arguments.
+
+### 8.4.3. Text output conversion & flushing
+
+> Takeaway 8.4.3 #1 _Text input and output converts data._
+
+> Takeaway 8.4.3 #2 _There are three commonly used conversion to encode end-of-line._ (Extracted from summary list).
+
+**Key details:**
+
+- Output streams are buffered. C library functions provide mechanisms (like `fflush` implicitly or explicitly) to force data out to the device.
+- Filesystem manipulation functions include `remove` and `rename` to delete or rename files directly via the C library.
+
+### 8.4.4. Formatted output
+
+**What it is:**
+`fprintf` functions identically to `printf` but accepts a target stream parameter, enabling formatted writes to files.
+
+> Takeaway 8.4.4 #3 _Use the_ `"%b"` _or_ `"%x"` _formats to print bit patterns._
+
+**Key details:**
+
+- Hexadecimal (`%x`) and binary (`%b`) formats correspond to unsigned values and are optimal for viewing raw bit sets.
+- Optional interfaces `printf_s` and `fprintf_s` verify that stream and format pointers are valid (though they do not fully validate the format specifiers against the argument list).
+
+**Pitfalls:**
+
+- Mixing formatted output streams connected to the same terminal without care can cause interleaved, garbled output.
+
+### 8.4.5. Unformatted text input
+
+**What it is:**
+Input is performed using `fgetc` for single characters and `fgets` for strings. `stdin` is the standard stream connected to terminal input.
+
+> Takeaway 8.4.5 #1 _Don't use_ `gets`. (From summary list).
+
+The `gets` function is intrinsically unsafe regarding buffer overflows.
+
+> Takeaway 8.4.5 #2 `fgetc` _returns_ `int` _to be able to encode a special error status,_ `EOF`, _in addition to all valid characters._
+
+If `fgetc` returned a `char`, it would not be able to distinctively return `EOF` (usually `-1`) without overlapping with a valid character code.
+
+> Takeaway 8.4.5 #3 _End-of-file can only be detected_ after _a failed read._
+
+Receiving `EOF` does not explicitly mean the stream has reached its end; it could denote a read error. The `feof(stream)` function must be called _after_ an operation returns `EOF` to confirm the file's end marker was hit.
+
+**Recap:**
+
+- `puts`/`putchar` handle basic standard output, while `fputs`/`fgetc` offer finer control over streams.
+- `FILE` pointers are opaque handlers for managing files via `fopen` using various mode/modifier combinations.
+- `fgetc` returns `int` to allow returning `EOF`, which must be followed by `feof` to verify the end of the file.
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h> // Provides runtime assert()
 
-void validate_and_process(int factor) {
-  // Takeaway 8.8 #4: Use as many asserts as possible to confirm runtime properties
-  // In production builds, compiling with -DNDEBUG disables all assert() checks.
-  assert(factor > 0 && "Factor must be positive!");
+int main(void) {
+    FILE* stream = fopen("test.txt", "r");
+    if (!stream) {
+        perror("Failed to open");
+        return EXIT_FAILURE;
+    }
 
-  if (factor > 100) {
-    puts("Factor out of bounds! Exiting early.");
-    // Takeaway 8.8 #2: Use exit() from nested functions terminating control flow
-    exit(EXIT_FAILURE);
-  }
+    int val = fgetc(stream); // Returns int to accommodate EOF
+    if (val == EOF) {
+        if (feof(stream)) {
+            puts("File is empty (EOF reached immediately).");
+        } else {
+            puts("A read error occurred.");
+        }
+    }
+
+    fclose(stream);
+    return EXIT_SUCCESS;
 }
 
-void demo_environment_and_exit(void) {
-  // Inspecting environment variables safely
-  char const* path = getenv("PATH");
-  if (path) {
-    printf("System PATH environment variable is set.\n");
-  }
-
-  validate_and_process(5);
-}
 ```
+
+_Expected behavior:_ Attempts to read a character. Correctly differentiates between a genuine read error and reaching the end of the file using `feof`.
+
+---
+
+## 8.5. String processing and conversion
+
+**What it is:**
+The C library provides utilities in `<ctype.h>` for classifying and converting single characters, and utilities in `<stdlib.h>` and `<string.h>` for parsing strings into numbers and searching substrings.
+
+**Why it matters / how it works:**
+Strings in C are character arrays terminated by a null character. Because C operates heavily on raw bytes, these utilities provide standard, portable ways to interpret text.
+
+**Key details:**
+
+- `<ctype.h>` includes classifier functions like `isalnum`, `isalpha`, `isblank`, `isdigit`, `isspace`, and conversions like `toupper` and `tolower`.
+- For historical reasons, classifier functions take `int` arguments and return `int`.
+- `<stdlib.h>` functions like `strtoul`, `strtod`, and `strtoumax` parse strings into numbers. `strtoul` takes `base` as an argument (0, 2, 8, 10, or 16). Base 0 automatically interprets prefixes (`0x` for hex, `0b` for binary).
+- `<string.h>` provides `strspn` (returns length of initial sequence consisting of specified characters) and `strcspn` (length of initial sequence _not_ consisting of specified characters).
+
+> Takeaway 8.5 #1 _The interpretation of numerically encoded characters depends on the execution character set._ (From summary list).
+
+### 8.5.1. Portability of string processing
+
+> Takeaway 8.5.1 #1 _Don't use the string conversion functions to determine the boundaries of numbers._ (From summary list).
+
+> Takeaway 8.5.1 #2 _Don't use the string conversion functions to scan numbers that originate from number literals._ (From summary list).
+
+**Pitfalls:**
+
+- String conversion functions have changed semantics across C standard versions and are not perfectly consistent with how C string literals for numbers are evaluated natively.
+
+**Recap:**
+
+- Use `<ctype.h>` for character-by-character analysis (e.g., `isdigit`).
+- Use `strtoul`/`strtod` to convert user-input strings into variables.
+- String conversions must be used carefully due to historical semantic shifts.
+
+---
+
+## 8.6. Time
+
+**What it is:**
+The `<time.h>` header provides functions to query and manipulate time. It handles both physical time (seconds/nanoseconds) and calendar time (structured for human interpretation).
+
+**Key details:**
+
+- `time_t` is generally used for physical time representation.
+- `struct tm` holds structured calendar time (year, month, day, etc.).
+- Functions include `timegm`, `gmtime_r`, and `localtime_r` to convert between raw physical time and structured calendar time.
+- `mktime` converts a `struct tm` back to a `time_t`.
+
+**Recap:**
+
+- Time is bifurcated into physical time and calendar time.
+- Thread-safe, reentrant functions ending in `_r` (like `localtime_r`) are provided to safely translate `time_t` into `struct tm`.
+
+---
+
+## 8.7. Runtime environment settings
+
+**What it is:**
+Standard C provides rudimentary interfaces to read the environment in which the program was launched. This is primarily done using `getenv` and internationalization parameters via `setlocale`.
+
+**Why it matters / how it works:**
+Environment variables dictate configurations (like paths and languages) dynamically at launch. `getenv("PATH")` fetches these key-value pairs from the OS.
+
+**Key details:**
+
+- `getenv` retrieves the value of an environment variable.
+- `getenv_s` is a bounds-checked alternative that ensures the target buffer is only written to if the environment value fits.
+- `setlocale` accepts categories like `LC_COLLATE` (string comparison), `LC_CTYPE` (character classification), `LC_TIME` (time formatting), and `LC_ALL` to adapt the program to local languages and conventions.
+
+**Recap:**
+
+- `getenv` and `getenv_s` interface with system variables.
+- `setlocale` modifies internal state affecting IO and text classifications.
+
+---
+
+## 8.8. Program termination and assertions
+
+**What it is:**
+C offers multiple ways to halt a program intentionally or diagnostically.
+
+> Takeaway 8.8 #1 _Regular program termination should use a_ `return` _from_ `main`.
+
+A standard `return` cleanly unwinds the `main` function and passes the return code back to the environment.
+
+> Takeaway 8.8 #2 _Use_ `exit` _from a function that may terminate the regular control flow._
+
+If deep within a call stack and a fatal error occurs, `exit` can be called. However, using `exit` directly inside `main` is discouraged because a simple `return` suffices.
+
+> Takeaway 8.8 #3 _Don't use functions other than_ `exit` _for program termination, unless you have to inhibit the execution of library cleanups._
+
+Functions like `quick_exit`, `_Exit`, and `abort` terminate the program abruptly without executing all standard library cleanups (like flushing open streams or running functions registered with `atexit`).
+
+> Takeaway 8.8 #4 _Use as many_ `asserts` _as you can to confirm runtime properties._ (From summary list).
+
+> Takeaway 8.8 #5 _In production compilations, use_ `NDEBUG` _to switch off all_ `asserts`. (From summary list).
+
+**Key details:**
+
+- The `<assert.h>` header provides the `assert` macro, which evaluates a condition at runtime. If the condition is false, `assert` forcefully terminates the program (usually via `abort`) and prints diagnostic information.
+- Defining the `NDEBUG` macro before including `<assert.h>` compiles assertions out entirely, making them zero-cost in production.
+
+**Recap:**
+
+- Always prefer returning from `main` to terminate cleanly.
+- Use `exit` if deep in a function hierarchy, but avoid `abort` or `_Exit` unless bypassing library cleanup is explicitly required.
+- Use `assert` liberally during development to codify invariants, disabling them for release.
+
+**Code Demonstration:**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+
+void perform_critical_task(int value) {
+    // Assert invariant: value must be positive
+    assert(value > 0);
+
+    if (value == 999) {
+        puts("Fatal condition hit, terminating from deep within stack.");
+        exit(EXIT_FAILURE); // Proper use of exit outside of main
+    }
+}
+
+int main(void) {
+    perform_critical_task(10);
+    // Regular termination uses return
+    return EXIT_SUCCESS;
+}
+
+```
+
+_Expected behavior:_ Exits successfully. If `perform_critical_task(-1)` were called, `assert` would trigger an abort. If `perform_critical_task(999)` were called, `exit` triggers a clean but premature failure shutdown.
+
+---
+
+## Summary
+
+The C library acts as an essential platform abstraction layer, standardizing operations that require deep system knowledge, accessed through well-defined headers. It provides robust mechanisms for integer arithmetic, type-generic numerical processing, and comprehensive input/output manipulation using opaque stream interfaces. The library ensures text processing portability via character classification and string functions, whilst supplying structures and macros for manipulating system time and runtime environment properties. Finally, the library defines safe practices for error tracking via `errno` and program termination, emphasizing clean returns from `main` and the use of runtime `assert`s to catch logic errors early during development.
+
+## Self-Check Questions
+
+1. **What is the difference between a library function and a function-like macro?**
+   _Answer:_ A function is an independent executable block, whereas a macro is a preprocessor construct that substitutes text directly into the code, which can risk evaluating side-effect arguments multiple times.
+
+2. **Why should you reset `errno` to 0 after recovering from an error?**
+   _Answer:_ Because subsequent library functions might check `errno`; if it is not cleared, they might read the old error state and behave unpredictably.
+
+3. **What is the purpose of functions ending with `_s` in Annex K?**
+   _Answer:_ They are bounds-checking interfaces designed to prevent buffer overflows and ensure parameter consistency.
+
+4. **Why are `<stdbit.h>` type-generic macros preferred over width-dependent ones?**
+   _Answer:_ Type-generic macros are independent of the exact width of the argument's type, making the code much easier for readers to interpret across platforms.
+
+5. **How does `<tgmath.h>` simplify mathematical operations?**
+   _Answer:_ It provides type-generic macros that automatically dispatch to the correct underlying function (e.g., `cos`, `cosf`, `cosl`) based on the type of the passed argument.
+
+6. **Why does `fgetc` return an `int` rather than a `char`?**
+   _Answer:_ So it can safely return the out-of-band `EOF` error/status value without confusing it with a valid character code.
+
+7. **Is receiving `EOF` from a read function definitive proof that the end of the file was reached?**
+   _Answer:_ No, `EOF` can also indicate a read error. The `feof` function must be called subsequently to confirm the end-of-file marker was actually reached.
+
+8. **Why is `exit()` discouraged inside `main`?**
+   _Answer:_ A standard `return` from `main` achieves the exact same clean termination without the unnecessary function call overhead, making it the preferred, idiomatic approach.
+
+9. **What does the `NDEBUG` macro do in relation to assertions?**
+   _Answer:_ Defining `NDEBUG` instructs the compiler to completely ignore and strip out all `assert` macros, neutralizing performance penalties in production builds.
