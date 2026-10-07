@@ -45,3 +45,9 @@ Aim for depth over brevity: a long, rich note is expected and desired. Do NOT su
 5. **Length and Quality:**
    - Do not stop early. If you run out of space, continue until every section is covered, and tell me where you stopped so I can say "continue".
    - Prefer explaining accurately over being short. Do not invent content not supported by the book or the C standard.
+
+## Prompt for a Chapter Study Note
+
+Help me write a detail Chapter Study Note for the "Chapter 12. The C memory model".
+Please carefully read through the chapter and generate a detailed, in-depth study note.
+**DO NOT** skip any section or subsection in the chapter.
