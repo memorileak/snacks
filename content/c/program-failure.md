@@ -11,396 +11,483 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-Chapter 15 of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, titled **"Program failure,"** concludes **Level 2: Cognition**. Rather than focusing on what happens *after* an error occurs (often misleadingly labeled under the broad jargon "undefined behavior" or UB), Gustedt systematically analyzes **why** programs fail and **how** developers can prevent, detect, and handle failures gracefully.
+Here is a detailed, comprehensive study note for **Chapter 15: Program failure**, generated directly from the provided text of _Modern C: A Guide to the C23 Standard_.
 
-Below is a detailed breakdown of the fundamental concepts, categories of program failure, design rules, and key takeaways from Chapter 15 across its six core sections:
+## 15.1 Wrongdoings
 
+### What it is
 
-### 1. Wrongdoings (Section 15.1)
-Wrongdoings are specific actions, events, or omissions during execution that directly cause a program failure.
+Wrongdoings represent the most straightforward category of program failures. These are specific actions, events, or omissions during execution that directly cause a failure. The book compares wrongdoings to traffic accidents where the driver is clearly at fault—such as speeding or drunk driving—rather than blaming the road or the environment.
 
-* **Arithmetic Violations (Section 15.1.1):**
-  * Exceptional mathematical conditions with no defined result—such as **integer division by zero** or **modulo by zero**—cause immediate program failure or traps.
-  * Finite bit-representation violations include negating `INT_MIN` or shifting bits by negative/out-of-range counts or shifting into a signed bit.
-  * **Takeaway 15.1.1 #1:** *The program execution should only perform arithmetic operations that are mathematically defined within the range of the underlying type*.
-  * **Takeaway 15.1.1 #2:** *The floating-point environment of the platforms determines the floating-point operations that result in program failure* (e.g., querying exceptions via `fetestexcept` and `<fenv.h>`).
-* **Type & Function Prototype Violations (Section 15.1.4):**
-  * Converting object or function pointers to incompatible types removes compiler safeguards and causes execution derailment.
-  * **Takeaway 15.1.4 #1:** *Don’t convert pointers unless you must*.
-  * **Takeaway 15.1.4 #2:** *Always call a function with the prototype with which it is defined*.
-  * **Takeaway 15.1.4 #3:** *Call a function by its name* (avoiding unnecessary function pointer casts).
-* **Access Violations (Section 15.1.5):**
-  * Common direct pointer/memory wrongdoings include: null pointer dereferences, accessing freed/stale memory, unsequenced modifications of the same object, out-of-bounds array access, modifying `const`-qualified objects, `restrict`/`volatile` rule violations, and double `free()` calls.
-* **Value Misinterpretation / Indeterminate Representations (Section 15.1.6):**
-  * Bit patterns that have no valid interpretation for a given type are called **indeterminate representations** in C23 (formerly *trap representations*).
-  * **Takeaway 15.1.6 #1:** *Don’t store values other than `0` or `1` in a `bool` object*.
-  * **Takeaway 15.1.6 #2:** *Don’t change the representation bytes of objects directly*.
-* **Explicit Invalidation with C23 `unreachable()` (Section 15.1.7):**
-  * C23 introduces `unreachable()` to assert that a specific control path will never be taken, allowing aggressive compiler optimization.
-  * **Takeaway 15.1.7 #1:** *Only use `unreachable()` where you have proof*.
-  * **Takeaway 15.1.7 #2:** *Don’t use other operations than `unreachable()` to mark a control path that will never be taken* (e.g., do not use division by zero to mark dead code).
+### Why it matters / how it works
 
-#### Example
+When a program commits a wrongdoing, it immediately violates the abstract state machine's rules. This often leads to what the C jargon calls _Undefined Behavior_ (UB), shifting the program into an unreliable state. Understanding wrongdoings allows programmers to check preconditions and avoid these fatal operations entirely.
 
-Operations whose mathematical results are undefined (such as integer division or modulo by zero) or that exceed the finite bit-width representation of signed types (such as negating `INT_MIN` or shifting into the sign bit) lead to immediate program failure or hardware traps. Floating-point exceptions can be queried using `<fenv.h>` interfaces like `fetestexcept` and `feclearexcept`.
+### Key details
 
-```c
-#include <stdio.h>
-#include <limits.h>
-#include <fenv.h> // Floating-point environment testing
+- Wrongdoings generally manifest during program execution and are often undetectable at compile time.
+- Unlike syntax errors that violate language constraints and halt compilation, wrongdoings survive compilation and corrupt the runtime state.
 
-void demo_arithmetic_violations(void) {
-  // 1. INTEGER ARITHMETIC VIOLATIONS (Takeaway 15.1.1 #1):
-  // Perform only arithmetic operations that are mathematically defined within type ranges.
-  int a = 10;
-  int b = 0;
-  if (b != 0) {
-    int res = a / b; // Safe guard against integer division by zero
-    (void)res;
-  }
+### Pitfalls
 
-  // Negating INT_MIN overflows signed integer representation (-INT_MIN > INT_MAX)
-  int min_val = INT_MIN;
-  if (min_val != INT_MIN) {
-    int neg = -min_val; // Avoid negating INT_MIN
-    (void)neg;
-  }
+- Focusing too much on the _results_ of the failure (what happens after UB is invoked) rather than the _causes_ (why the failure occurred) is a major pitfall.
 
-  // 2. FLOATING-POINT ENVIRONMENT EXCEPTION CHECKING (Takeaway 15.1.1 #2):
-  // Floating-point division by zero yields INFINITY without crashing on IEC 60559 platforms.
-  feclearexcept(FE_ALL_EXCEPT); // Clear current floating-point flags
-  double x = 0.0;
-  double div_result = 1.0 / x;
+### Connections
 
-  if (fetestexcept(FE_DIVBYZERO)) {
-    printf("Captured floating-point exception: FE_DIVBYZERO (Result: %g)\n", div_result);
-    feclearexcept(FE_DIVBYZERO); // Reset exception state
-  }
-}
-```
+- Connects to the **Abstract State Machine** (Section 5.1), which dictates that operations must be strictly defined to transition properly.
 
-#### Example
+### 15.1.1 Arithmetic violations
 
-Converting pointers across incompatible base types strips away compiler checks. Functions must always be called using their exact definition prototype and name. Access violations include null pointer dereferences, accessing freed/stale memory, modifying `const` objects, and unsequenced updates.
+**What it is:**
+Arithmetic violations happen when a program attempts an operation that has no mathematically defined result for the represented numbers, known in the standard as an _exceptional condition_.
+
+**Why it matters / how it works:**
+The CPU or floating-point environment cannot process operations like division by zero or modulo by zero for integers. In floating-point arithmetic, the environment dictates how these are handled (e.g., yielding `INFINITY` or raising a signal).
+
+**Key details:**
+
+- Integer division by zero directly results in program failure.
+- Floating-point exceptions do not always result in program failure; they depend on the platform's floating-point environment (e.g., `<fenv.h>`).
+
+**Pitfalls:**
+
+- Assuming floating-point arithmetic fails the same way integer arithmetic does. Systems with `FE_DIVBYZERO` might seamlessly return `INFINITY` instead of crashing.
+
+> Takeaway 15.1.1 #2: The floating-point environment of the platforms determines the floatingpoint operations that result in program failure.
+
+_Explanation:_ Your hardware and the standard library implementation (such as whether `INFINITY` is defined) control what happens when a math violation occurs. You must query this environment using tools like `fetestexcept()` to know if an error occurred.
+
+> Takeaway 15.1.1 #4: Where possible, use array indexing instead of pointer arithmetic combined with dereferencing.
+
+_Explanation:_ Relying on array indexing (`A[i]`) clearly communicates bounds and intent to the compiler, avoiding the arithmetic pitfalls and out-of-bounds risks associated with raw pointer arithmetic (`*(A + i)`).
 
 ```c
 #include <stdio.h>
+#include <fenv.h>
 #include <stdlib.h>
 
-static void print_double(double val) {
-  printf("Value: %g\n", val);
+// Code Demonstration: Arithmetic Violations
+int main(void) {
+    // Expected behavior: Integer division by zero triggers UB (often a crash/trap).
+    // What goes wrong if... we uncomment the next line:
+    // int x = 5 / 0;
+
+    // Floating point division by zero.
+    // The environment dictates the behavior.
+    feclearexcept(FE_ALL_EXCEPT); // Clear previous exceptions
+    double num = 5.0;
+    double zero = 0.0;
+
+    double result = num / zero; // Floating point exception
+
+    if (fetestexcept(FE_DIVBYZERO)) {
+        printf("Division by zero occurred! Result: %g\n", result);
+    }
+
+    return 0;
 }
 
-void demo_type_and_access_violations(void) {
-  // Takeaway 15.1.4 #1: Don't convert pointers unless you must.
-  // Takeaway 15.1.4 #2: Always call a function with the prototype with which it is defined.
-  // Takeaway 15.1.4 #3: Call a function by its name rather than casting function pointers.
-  void (*fn_ptr)(double) = print_double; // Exact prototype match
-  fn_ptr(42.0);
-
-  // ACCESS VIOLATION PREVENTION (Section 15.1.5):
-  double* ptr = malloc(sizeof *ptr);
-  if (ptr) {
-    *ptr = 3.14159;
-    free(ptr); // Release dynamic memory
-    ptr = nullptr; // Takeaway 11.1.4 #2: Reset stale pointers to nullptr immediately!
-  }
-}
 ```
 
-#### Example
+### 15.1.3 Value violations
 
-An **indeterminate representation** occurs when storage contains a bit pattern with no valid interpretation for its type. Modifying representation bytes of scalar types directly (like writing non-`0`/`1` values into a `bool` variable) leads to misinterpretation.
+**What it is:**
+Value violations occur when standard C library functions are called with arguments that are invalid for the requested operation, or when the operation's result cannot be represented.
+
+**Why it matters / how it works:**
+The C library trusts the programmer to pass valid values (e.g., non-null pointers, appropriately sized bounds). Passing invalid values directly causes failure because the library functions generally do not check preconditions for you.
+
+**Key details:**
+
+- Examples include passing null pointers, excessively large numbers, or zero sizes to allocation functions.
+
+**Pitfalls:**
+
+- Relying on the C library to safely reject bad inputs. Most functions will blindly process invalid values and crash.
+
+### 15.1.4 Function pointers and Call Prototypes
+
+**What it is:**
+This concept addresses the dangers of misusing function pointers, casting them improperly, or calling functions without consistent prototypes.
+
+**Why it matters / how it works:**
+If a function is called through a pointer that was cast away from its original type, or if different translation units use conflicting prototypes for the same function name, the execution environment may corrupt the call stack or misinterpret return values.
+
+> Takeaway 15.1.4 #1: Don’t convert pointers unless you must.
+
+_Explanation:_ Pointer conversions hide the true type of the object or function, bypassing the compiler's strict type checking and inviting severe runtime failures.
+
+> Takeaway 15.1.4 #2: Always call a function with the prototype with which it is defined.
+
+_Explanation:_ Mismatched prototypes mean the caller and callee disagree on how parameters are passed or returned, which corrupts the execution state.
+
+> Takeaway 15.1.4 #3: Call a function by its name.
+
+_Explanation:_ Calling a function directly by its name (rather than through a function pointer) is the simplest and safest way to avoid casting errors and prototype mismatches.
+
+```c
+#include <stdio.h>
+
+void print_int(int a) {
+    printf("Integer: %d\n", a);
+}
+
+int main(void) {
+    // Expected behavior: Calling directly by name is safe.
+    print_int(42);
+
+    // What goes wrong if... we cast the function pointer to a mismatched type:
+    // void (*bad_ptr)(double) = (void (*)(double))print_int;
+    // bad_ptr(3.14); // UB: Prototype mismatch during call!
+
+    return 0;
+}
+
+```
+
+### 15.1.5 Access violations
+
+**What it is:**
+Access violations are improper uses of memory interfaces, occurring when a program reads or writes to memory it shouldn't. The text likens this to ignoring a "No Entry" sign in traffic.
+
+**Why it matters / how it works:**
+Because C's type system cannot always track pointer bounds and lifetimes at compile time, illegal memory accesses are usually caught by the operating system (e.g., a segmentation fault) or silently corrupt data.
+
+**Key details:**
+
+- **Common cases:** Null pointer dereference, accessing freed storage, out-of-bounds array access, or modifying a `const`-qualified object (like a string literal).
+- Other cases include unsequenced modifications, accessing atomic structures improperly, or calling `free` twice.
+
+**Pitfalls:**
+
+- Believing that access violations will immediately crash the program. Often, they silently corrupt adjacent data, delaying the failure.
+
+### 15.1.6 Value misinterpretation
+
+**What it is:**
+Value misinterpretation (formerly known as a _trap representation_) happens when an object stores a bit pattern that is invalid for the type attempting to access it. C23 refers to this as an _indeterminate representation_.
+
+**Why it matters / how it works:**
+When memory is copied or casted inappropriately, a type might be forced to interpret raw bytes that don't constitute a valid value for that type.
+
+> Takeaway 15.1.6 #1: Don’t store values other than 0 or 1 in a bool object.
+
+_Explanation:_ A boolean object expects only a strictly binary state. Forcing other byte representations into a `bool` compromises the abstract state machine.
+
+> Takeaway 15.1.6 #2: Don’t change the representation bytes of objects directly.
+
+_Explanation:_ Manually shifting or injecting bytes into standard types (especially floating-point or booleans) creates non-value representations, leading to immediate program failure when accessed.
 
 ```c
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 
-void demo_value_misinterpretation(void) {
-  // Takeaway 15.1.6 #1: Don't store values other than 0 or 1 in a bool object.
-  // Takeaway 15.1.6 #2: Don't change the representation bytes of objects directly.
-  bool flag = true;
+int main(void) {
+    bool my_bool = true;
 
-  // BAD PRACTICE (Avoid!): Overwriting bool representation bytes directly via unsigned char*
-  // unsigned char bad_byte = 0xFE;
-  // memcpy(&flag, &bad_byte, 1); // Corrupts boolean truth-testing logic!
+    // What goes wrong if... we change the representation bytes directly:
+    // unsigned char bad_val = 42;
+    // memcpy(&my_bool, &bad_val, sizeof(bool));
+    // printf("Bool is: %d\n", my_bool); // UB: Value misinterpretation!
 
-  if (flag) { // Clean boolean check
-    puts("Bool state is valid (0 or 1).");
-  }
+    return 0;
 }
+
 ```
 
-#### Example
+### 15.1.7 Explicit invalidation
 
-C23 introduces the **`unreachable()`** macro to assert that a control path will never be executed, enabling aggressive compiler optimization.
+**What it is:**
+Explicit invalidation utilizes the C23 `unreachable()` macro to annotate control paths that the programmer guarantees will never be executed.
+
+**Why it matters / how it works:**
+It is a tool for the optimizer. If the control flow reaches an `unreachable()` macro, the abstract state machine treats it as a program failure. It differs from `exit()` or `abort()`, which prescribe specific termination behavior; `unreachable()` simply tells the compiler the path doesn't exist.
+
+> Takeaway 15.1.7 #1: Only use unreachable() where you have proof.
+
+_Explanation:_ If you cannot mathematically or logically prove the path is impossible, the compiler's optimizations around `unreachable()` will actively break your program.
+
+> Takeaway 15.1.7 #2: Don’t use other operations than unreachable() to mark a control path that will never be taken.
+
+_Explanation:_ Do not artificially trigger undefined behavior (like dividing by zero) to hint to the compiler that a path is dead. Use the explicit standard macro meant for this purpose.
+
+_Recap of 15.1:_
+
+- Wrongdoings are direct causes of UB.
+- They encompass math errors, library misuses, pointer mishandling, and memory violations.
+- Explicit hints like `unreachable()` must be used strictly logically.
+
+---
+
+## 15.2 Program state degradation
+
+### What it is
+
+Program state degradation is a systemic failure resulting from the cumulative interplay of multiple actions over time, rather than a single explicit wrongdoing. The text equates this to being part of a traffic jam: no single driver caused it, but everyone contributes to the gridlock.
+
+### Why it matters / how it works
+
+Degradation exhausts system resources. Because the standard environment has finite capacity for memory and execution contexts, failing to manage resources degrades the state until the execution inevitably crashes.
+
+### 15.2.1 Unbounded recursion
+
+**What it is:**
+Unbounded recursion occurs when a recursive function fails to make progress toward its base case, exhausting the platform's capacity to provide function call contexts.
+
+**Why it matters / how it works:**
+Each function call pushes a new context onto the _stack_. If the recursion never bottoms out, it leads to a _stack overflow_, which is a special form of state degradation that crashes the program.
+
+### 15.2.2 Storage exhaustion
+
+**What it is:**
+Storage exhaustion happens when the dynamically allocated memory system (the _heap_) or other finite system resources (files, threads, mutexes) are depleted.
+
+**Why it matters / how it works:**
+Functions like `malloc`, `calloc`, and `realloc` return a null pointer when memory is exhausted. While the C standard doesn't provide a way to predict stack exhaustion, heap exhaustion is detectable and must be handled.
+
+**Key details:**
+
+- Other scarce resources include streams (`FOPEN_MAX`), threads (`thrd_create`), and mutexes (`mtx_init`).
+
+_Recap of 15.2:_
+
+- Degradation is a gradual, resource-based failure.
+- The Stack is vulnerable to unbounded recursion.
+- The Heap and system resources are vulnerable to unmonitored allocations.
+
+---
+
+## 15.3 Unfortunate incidents
+
+### What it is
+
+Unfortunate incidents are rare, complex failures caused by the fatal alignment of distant, seemingly unrelated events in space or time. The book compares this to independent cars colliding at an intersection due to blind spots.
+
+### Why it matters / how it works
+
+Because the components involved might be perfectly valid in isolation, diagnosing these failures is notoriously difficult.
+
+### 15.3.1 Escalating state degradation
+
+**What it is:**
+This occurs when a program ignores the warning signs of state degradation (like a null pointer from `malloc`) and proceeds anyway.
+
+**Why it matters / how it works:**
+Continuing execution after resource exhaustion causes erratic system reactions. Like ignoring a brake malfunction light in a car, it jeopardizes not only the program but potentially the host system and innocent bystanders.
+
+### 15.3.2 Collisions and race conditions
+
+**What it is:**
+Collisions happen when subexpressions with side effects access and modify the same memory locations in unsequenced ways.
+
+**Why it matters / how it works:**
+Because C expression evaluation does not strictly prescribe execution order (sequencing), a compiler might interleave reads and writes arbitrarily.
+
+> Takeaway 15.3.2 #1: Don’t read and modify the same object within the same arithmetic expression.
+
+_Explanation:_ An expression like `x++ + x` is a wrongdoing because the modification of `x` is unsequenced relative to the secondary read of `x`, resulting in unpredictable output.
+
+**Key details:**
+
+- With pointers, this becomes a _race condition_ (e.g., `(*p)++ + (*q)` where `p == q`).
+- Signal handlers and multithreaded concurrent access are major sources of uncontrollable race conditions.
 
 ```c
 #include <stdio.h>
-#include <stddef.h>
-#include <utility.h> // Provides C23 unreachable()
 
-static ptrdiff_t safe_ptr_diff(unsigned char const p[static 1], unsigned char const q[static 1]) {
-  // Takeaway 15.1.7 #1: Only use unreachable() where you have mathematical or logical proof.
-  if (!p || !q) {
-    // Takeaway 15.1.7 #2: Don't use other operations (like division by zero) to mark dead code.
-    unreachable(); // Informs compiler this branch is logically impossible
-  }
-  return p - q;
+int main(void) {
+    int x = 5;
+    // What goes wrong if... we violate sequencing rules:
+    // printf("%d\n", x++ + x); // UB: Unsequenced read and modify
+
+    // Expected behavior: Separate the operations.
+    x++;
+    printf("%d\n", x + x); // Safe and defined
+
+    return 0;
 }
 
-void demo_unreachable(void) {
-  unsigned char buf1 = {};
-  unsigned char buf2 = {};
-  ptrdiff_t diff = safe_ptr_diff(buf1, buf2);
-  printf("Pointer offset: %td\n", diff);
-}
 ```
 
-### 2. Program State Degradation (Section 15.2)
-Unlike single wrongdoings, state degradation occurs when no single line of code is individually at fault, but execution resources slowly deteriorate until failure becomes inevitable.
+### 15.3.3 Inappropriate library calls and macro invocations
 
-* **Unbounded Recursion & Stack Overflow (Section 15.2.1 & 15.2.2):**
-  * Lacking progress or an explicit termination condition in recursive calls depletes call-context memory on the **stack**, resulting in a stack overflow crash.
-* **Heap Storage Exhaustion (Section 15.2.2):**
-  * Exhausting runtime **heap** allocation capacity causes `malloc`, `calloc`, `realloc`, `strdup`, or `strndup` to return `nullptr`. Testing returns prevents catastrophic failure.
-* **Other Scarce Execution Resources (Section 15.2.3):**
-  * Runtime environments contain bounded scarce resources that must be released symmetrically:
-    * **File Streams:** Limited by `FOPEN_MAX` (`fopen` / `fclose`).
-    * **Temporary Files:** Limited by `TMP_MAX` (`tmpfile` / `remove`).
-    * **Concurrency Primitives:** Thread contexts (`thrd_create` / `thrd_join`), mutexes (`mtx_init` / `mtx_destroy`), condition variables (`cnd_init` / `cnd_destroy`), and thread-specific storage (`tss_create` / `tss_delete`).
+**What it is:**
+Invoking specific C library functions in contexts where they are forbidden, such as calling `signal` in a multithreaded program or placing the `setjmp` macro outside of highly restricted expression contexts.
 
-#### Example
+### 15.3.4 Deadlocks
 
-State degradation occurs when no single line of code is at fault, but runtime execution resources slowly deteriorate until system failure becomes inevitable.
+**What it is:**
+A deadlock failure occurs in multithreaded contexts when several threads trap themselves in a cyclic chain of dependencies for shared resources. The text uses a traffic roundabout that is completely locked up as a visual analogy.
 
-* **Stack Overflow:** Caused by unbounded recursion lacking progress or explicit termination checks.
-* **Heap Storage Exhaustion:** Occurs when `malloc`, `calloc`, `realloc`, `strdup`, or `strndup` return `nullptr` due to memory exhaustion.
-* **Scarce Execution Resources:** Resources like file streams (`FOPEN_MAX`), temporary files (`TMP_MAX`), thread contexts, and mutexes must be released symmetrically.
+_Recap of 15.3:_
 
-```c
-#include <stdio.h>
-#include <stdlib.h>
+- Unfortunate incidents are hard-to-trace interactions between distant code elements.
+- Unsequenced expressions cause data collisions.
+- Deadlocks trap concurrent operations.
 
-void demo_state_degradation(void) {
-  // Checking Heap Resource Exhaustion (Takeaway 15.5 #2)
-  size_t huge_size = (size_t)-1 / 2; // Intentionally excessive request
-  double* memory = malloc(huge_size);
+---
 
-  if (!memory) {
-    // Graceful handling of heap exhaustion without crashing
-    fputs("State Degradation Guard: malloc returned nullptr (Out of Memory).\n", stderr);
-  } else {
-    free(memory);
-  }
-}
-```
+## 15.4 Series of unfortunate events
 
-### 3. Unfortunate Incidents (Section 15.3)
-Unfortunate incidents occur when individually valid operations fail due to unpredictable, distant interactions across different parts of the program.
+### What it is
 
-* **Escalating State Degradation:** Ignoring resource exhaustion (e.g., continuing execution after a failed allocation) causes erratic, systemic crashes.
-* **Collisions & Race Conditions (Section 15.3.2):**
-  * **Takeaway 15.3.2 #1:** *Don’t read and modify the same object within the same arithmetic expression* (e.g., `x++ + x` evaluates with unsequenced side effects).
-  * Concurrent modifications across signal handlers or multiple threads create unsequenced race conditions unless synchronized using atomic types or mutexes.
-* **Inappropriate Context Calls:** Calling non-reentrant or non-thread-safe library functions (such as `signal` inside multithreaded code, or misplacing `setjmp`) jeopardizes runtime stability.
-* **Deadlocks:** Concurrent threads locking multiple mutexes out of order create permanent execution blockages.
+This describes a program execution that gets trapped in an endless loop over a finite set of states without making any visible progress or producing side effects.
 
-#### Example
+### Why it matters / how it works
 
-Unfortunate incidents occur when individually valid operations fail due to unpredictable, unsequenced, or distant interactions across the program.
+The compiler is allowed to assume that loops eventually terminate or produce observable behavior. If neither happens, the program state is effectively lost, similar to a plane circling endlessly in the eye of a storm.
 
-```c
-#include <stdio.h>
+> Takeaway 15.4 #1: A program execution that loops over a finite set of states with no observable side effects has failed.
 
-void demo_unfortunate_incidents(void) {
-  int x = 5;
+_Explanation:_ Infinite loops must do something observable (IO, modifying global state, calling volatile memory). If they do not, the compiler may legally optimize the loop away or trigger a failure.
 
-  // Takeaway 15.3.2 #1: Don't read and modify the same object within the same arithmetic expression.
-  // BAD PRACTICE (Avoid!): printf("%d\n", x++ + x); // Unsequenced modification and read!
+_Recap of 15.4:_
 
-  // GOOD PRACTICE: Separate side effects into distinct, sequenced statements
-  int val1 = x;
-  x += 1;
-  int sum = val1 + x;
-  printf("Sequenced calculation result: %d (x = %d)\n", sum, x);
-}
-```
+- Infinite loops without observable behavior are considered program failures.
+- Compilers use this rule to aggressively optimize.
 
-### 4. Series of Unfortunate Events & Livelocks (Section 15.4)
-Nasty failures can occur when code runs endlessly over a finite set of states without making visible progress.
+---
 
-* **Infinite Loops Without Progress:**
-  * **Takeaway 15.4 #1:** *A program execution that loops over a finite set of states with no observable side effects has failed*.
-  * Compilers may assume loops without observable side effects (I/O, global state changes, or explicit exits) terminate or trigger `unreachable()`, optimizing them away unexpectedly.
-* **Livelocks:** In multithreaded systems, threads repeatedly change their state in response to each other without accomplishing real work (resembling a cyclic detour trap).
+## 15.5 Dealing with failures
 
-#### Example
+### What it is
 
-A program that enters an endless loop over a finite set of states with no observable side effects (such as I/O, global state changes, or explicit exits) has failed.
+This section outlines the strategies required to prevent, detect, and mitigate program failures across the different categories.
 
-```c
-#include <stdio.h>
-#include <stdbool.h>
+### Why it matters / how it works
 
-void demo_series_of_unfortunate_events(void) {
-  size_t iterations = 0;
+Different failures require different mitigation tactics. Because byzantine failures (UB) cannot be captured once they happen, proactive design is strictly required.
 
-  // Takeaway 15.4 #1: A loop over a finite set of states MUST produce observable progress.
-  for (size_t i = 0; i < 5; ++i) {
-    printf("Observable progress step: %zu\n", i); // Output side effect ensures progress
-    ++iterations;
-  }
-}
-```
+> Takeaway 15.5 #1: Ensure all preconditions for an operation that could fail.
 
-### 5. Dealing with Failures (Section 15.5)
-The most effective way to deal with failure is anticipatory prevention and checking error indicators.
+_Explanation:_ You must actively guard against wrongdoings (null checks, bounds checks, zero division checks) before they execute.
 
-* **Takeaway 15.5 #1:** *Ensure all preconditions for an operation that could fail* (defensive programming before executing risky code).
-* **Takeaway 15.5 #2:** *The return of operations that might exhaust resources should be checked for errors* (verifying library returns and `errno`).
-* **Takeaway 15.5 #3:** *Unfortunate events can only be avoided with a careful algorithm design*.
-* **System Termination Mechanisms:**
-  * Controlled user cleanup: `return` from `main` or `exit()`.
-  * Alternate/fast cleanup: `quick_exit()` (invokes `at_quick_exit` handlers).
-  * OS-level termination: `_Exit()` (bypasses application handlers).
-  * Abnormal termination: `abort()` (raises `SIGABRT`, bypassing system cleanup).
+> Takeaway 15.5 #2: The return of operations that might exhaust resources should be checked for errors.
 
-#### Example
+_Explanation:_ Always check if a system call or allocation (like `malloc`) returned a failure indicator (like `NULL` or a specific `errno`) to catch state degradation early.
 
-To prevent failures, programs must enforce **precondition checks** before executing risky operations and inspect return values of functions that manage resources.
+> Takeaway 15.5 #3: Unfortunate events can only be avoided with a careful algorithm design.
 
-```c
-#include <stdio.h>
-#include <stdlib.h>
+_Explanation:_ Because race conditions and deadlocks are systemic and often un-testable at runtime, you must design your concurrency architecture carefully on paper before writing the code.
 
-// Takeaway 15.5 #1: Ensure all preconditions for an operation that could fail.
-static double safe_divide(double numerator, double denominator, bool* success_flag) {
-  if (denominator == 0.0) {
-    if (success_flag) *success_flag = false;
-    return 0.0; // Return fallback value on precondition failure
-  }
-  if (success_flag) *success_flag = true;
-  return numerator / denominator;
-}
+**Key details:**
 
-void demo_dealing_with_failures(void) {
-  bool ok = false;
-  double result = safe_divide(10.0, 0.0, &ok);
-  if (!ok) {
-    fputs("Precondition check failed: Division by zero avoided.\n", stderr);
-  } else {
-    printf("Result: %g\n", result);
-  }
+- Systems provide termination functions (`exit`, `abort`, `_Exit`) and interrupt handlers (signals, traps) to shut down gracefully when a failure is detected.
 
-  // SYSTEM TERMINATION MECHANISMS (Section 8.8 & 15.5):
-  // 1. return from main / exit(): Runs normal library & atexit cleanups.
-  // 2. quick_exit(): Runs at_quick_exit handlers, bypasses standard exit handlers.
-  // 3. _Exit(): Immediate OS termination bypassing application handlers.
-  // 4. abort(): Abnormal termination raising SIGABRT.
-}
-```
+_Recap of 15.5:_
 
-### 6. Error Checking, Preserving `errno`, & `goto` Cleanup (Section 15.6)
+- Prevent wrongdoings via precondition checks.
+- Prevent degradation by checking resource return values.
+- Prevent unfortunate events through superior architectural design.
 
-Robust functions validate input preconditions, preserve external error states, and use centralized cleanup blocks.
+---
 
-* **Standard Error Macros (`<errno.h>`):**
-  * Custom functions indicate failure by returning negative platform error codes like `-EFAULT` (invalid pointer), `-EOVERFLOW` (result too large), or `-ENOMEM` (out of memory).
-* **Preserving `errno` State:**
-  * Functions performing internal cleanup or status checks should save `errno` on entry and restore it via a helper (e.g., `error_cleanup`) so callers receive unchanged diagnostic context.
-* **Centralized Resource Cleanup with `goto`:**
-  * When a multi-step function fails halfway through (e.g., after allocating memory or opening a stream), jumping to a single `CLEANUP:` label ensures all allocated resources are freed without duplicating code or creating deeply nested `if-else` trees.
-* **Rules for `goto` Labels:**
-  * **Takeaway 15.6 #1:** *Labels for `goto` are visible in the entire function that contains them*.
-  * **Takeaway 15.6 #2:** *`goto` can only jump to a label inside the same function*.
-  * **Takeaway 15.6 #3:** *`goto` should not jump over variable initializations*.
+## 15.6 Error checking and cleanup
 
-#### Example
+### What it is
 
-When writing robust library functions that perform multiple resource allocations or system calls, failure handling often dominates the code.
+The practical implementation of capturing runtime errors, managing the `errno` state, and gracefully cleaning up allocated resources before terminating or returning.
 
-* **Preserving `errno`:** Functions performing internal cleanup should save `errno` upon entry and restore it via an `error_cleanup` helper.
-* **Centralized `goto CLEANUP`:** Jumping to a single cleanup block prevents code duplication and avoids deeply nested `if-else` trees.
-* **Rules for `goto` Labels:**
-  * **Takeaway 15.6 #1:** *Labels for `goto` are visible in the entire function containing them*.
-  * **Takeaway 15.6 #2:** *`goto` can only jump to a label inside the same function*.
-  * **Takeaway 15.6 #3:** *`goto` should not jump over variable initializations*.
+### Why it matters / how it works
+
+Functions must safely unwind their state. If a function allocates memory and subsequently fails an IO operation, it must still free that memory. The standard technique in C for this involves using `goto` statements to centralize cleanup code.
+
+### Key details
+
+- C library functions return specific error values (e.g., `-EFAULT`, `-ENOMEM`) or set `errno`.
+- If a function detects an error but needs to clean up, it should save the state of `errno`, perform the `free()` calls, and then restore `errno` before returning, ensuring the caller sees the original error.
+
+> Takeaway 15.6 #1: Labels for goto are visible in the entire function that contains them. (Extracted from takeaway list / context).
+
+_Explanation:_ You can safely jump forward to a cleanup label (`CLEANUP:`) from anywhere within the same function block, making resource deallocation linear and avoiding nested `if-else` cascades.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 
-// Macro fallbacks for platform error codes from <errno.h>
-#ifndef EFAULT
-# define EFAULT EDOM
-#endif
-#ifndef ENOMEM
-# define ENOMEM ERANGE
-#endif
+// Code Demonstration: Error checking and cleanup
+int process_file(const char* filename) {
+    int prev_errno = errno;
+    int status = -1;
 
-// Helper function to restore original errno state while returning a negative error code
-static inline int error_cleanup(int err, int prev_errno) {
-  errno = prev_errno; // Preserves external errno state
-  return -err;        // Returns negative error status
-}
+    // Check preconditions
+    if (!filename) return -EINVAL;
 
-// Function allocating resources and demonstrating centralized goto CLEANUP
-int process_data_buffer(size_t len, double const input[restrict len]) {
-  // 1. PRECONDITION CHECKS:
-  if (!input || len == 0) {
-    return -EFAULT; // Return negative error code for invalid parameters
-  }
-
-  int saved_errno = errno;
-  double* temp_buf = nullptr;
-  double* work_buf = nullptr;
-
-  // 2. FIRST RESOURCE ALLOCATION:
-  temp_buf = malloc(len * sizeof *temp_buf);
-  if (!temp_buf) {
-    return error_cleanup(ENOMEM, saved_errno); // Clean failure without changing errno
-  }
-
-  // 3. SECOND RESOURCE ALLOCATION:
-  work_buf = malloc(len * sizeof *work_buf);
-  if (!work_buf) {
-    // Jump to central cleanup label to free temp_buf without repeating code
-    goto CLEANUP;
-  }
-
-  // Perform actual work on buffers...
-  for (size_t i = 0; i < len; ++i) {
-    work_buf[i] = input[i] * 2.0;
-  }
-
-  printf("Buffer successfully processed %zu elements.\n", len);
-
-  // CENTRAL CLEANUP BLOCK (Takeaways 15.6 #1, #2, #3):
-  CLEANUP:
-    free(work_buf); // Safe to call free() on allocated memory or nullptr
-    free(temp_buf);
-
-    if (!work_buf && temp_buf == nullptr) {
-      return error_cleanup(ENOMEM, saved_errno);
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        return -errno;
     }
-    return 0; // Success return code
+
+    char* buffer = malloc(1024);
+    if (!buffer) {
+        status = -ENOMEM;
+        goto CLEANUP_FILE;
+    }
+
+    // Simulate work that fails
+    if (fgets(buffer, 1024, file) == NULL) {
+        status = -EIO;
+        goto CLEANUP_ALL;
+    }
+
+    status = 0; // Success
+
+CLEANUP_ALL:
+    free(buffer);
+CLEANUP_FILE:
+    fclose(file);
+
+    // Restore errno to whatever failed during the process
+    if (status != 0) errno = prev_errno;
+    return status;
 }
 
-void demo_error_checking_and_cleanup(void) {
-  double data = {1.0, 2.0, 3.0};
-  int status = process_data_buffer(3, data);
-  printf("Function completed with status code: %d\n", status);
-}
 ```
 
-### Summary of Failure Types & Mitigation Strategies
+_Recap of 15.6:_
 
-| Failure Category | Primary Cause | Typical Manifestation | Recommended Mitigation |
-| :--- | :--- | :--- | :--- |
-| **Wrongdoings** | Arithmetic errors, illegal casts, access violations | Crashes, traps, memory corruption | Validate preconditions; avoid pointer casts; use `unreachable()` only with proof. |
-| **State Degradation** | Stack/heap/stream resource exhaustion | Allocation returns `nullptr`, stack overflow | Limit recursion depth; check `malloc`/`fopen` returns. |
-| **Unfortunate Incidents** | Unsequenced side effects, race conditions, deadlocks | Erratic results, silent data corruption, hangs | Avoid unsequenced expressions; lock mutexes in fixed order; synchronize shared state. |
-| **Series of Unfortunate Events** | Infinite loops without side effects, livelocks | Endless execution without progress | Ensure loops perform observable progress/I/O. |
+- Use `goto` for unified cleanup blocks.
+- Manage `errno` carefully so the caller gets accurate diagnostics.
+- Never skip `free()` calls when erroring out early.
+
+---
+
+## Summary
+
+Chapter 15 establishes that C programs fail via three primary avenues: wrongdoings, program state degradation, and unfortunate incidents. Wrongdoings are explicit violations of the abstract state machine, such as dividing by zero, accessing uninitialized pointers, or misusing C library functions, which immediately invoke undefined behavior. Program state degradation acts like a slow leak, where unmonitored recursion or unchecked memory allocations eventually exhaust the platform's finite resources. Finally, unfortunate incidents are complex architectural failures, such as deadlocks, race conditions, and unsequenced memory access, where otherwise valid code collides fatally in time or space. Because the C language fundamentally prioritizes speed over safety, the compiler rarely protects the programmer from these failures; instead, you must rigorously enforce preconditions, meticulously check the return values of all resource-allocating functions, and architect concurrent environments to structurally preclude race conditions. When errors are detected, functions must rely on structured cleanups (often using `goto`) to gracefully release resources without corrupting the global error state.
+
+---
+
+## Self-Check Questions
+
+1. **What is the difference between a wrongdoing and program state degradation?**
+   _Answer:_ A wrongdoing is a direct, singular invalid operation (like dividing by zero) that immediately violates standard rules. State degradation is a gradual failure over time (like a memory leak or stack overflow) due to resource exhaustion.
+
+2. **Does an integer division by zero and a floating-point division by zero behave identically in C?**
+   _Answer:_ No. Integer division by zero always causes program failure. Floating-point division behavior depends entirely on the platform's specific floating-point environment implementation (e.g., it might return `INFINITY`).
+
+3. **Why is it dangerous to cast function pointers before calling them?**
+   _Answer:_ Calling a function through a pointer with an incompatible prototype causes undefined behavior because the compiler misaligns the parameters and return types on the call stack.
+
+4. **What is an "indeterminate representation" (or trap representation)?**
+   _Answer:_ It is a sequence of bits in memory that does not represent a mathematically or logically valid value for the type reading it, such as storing the byte value `42` into a `bool` object.
+
+5. **How should a programmer communicate to the compiler that a specific `if` branch is mathematically impossible to reach?**
+   _Answer:_ By placing the `unreachable()` macro inside that branch. However, this must only be used if there is absolute logical proof.
+
+6. **What is the consequence of an unbounded recursive function in C?**
+   _Answer:_ It continually pushes new contexts onto the call stack until the stack is exhausted, resulting in a fatal program state degradation (stack overflow).
+
+7. **Why is evaluating `x++ + x` considered a program failure?**
+   _Answer:_ It creates a collision/race condition within a single expression because the modification of `x` and the reading of `x` are unsequenced by the C standard.
+
+8. **What happens if an infinite loop performs no observable side effects (no IO, no global state changes)?**
+   _Answer:_ The C standard dictates this is a program failure. The compiler is legally permitted to optimize the loop away entirely.
+
+9. **How should a function cleanly handle multiple points of failure without leaving memory allocated?**
+   _Answer:_ By using `goto` statements to jump to a centralized cleanup block at the end of the function where all allocated resources are freed before returning.
+
+10. **Why is it necessary to save and restore `errno` during a function's cleanup phase?**
+    _Answer:_ `errno` is a global state variable. If a cleanup function (like `fclose`) temporarily sets `errno`, it overwrites the original error that triggered the cleanup, depriving the caller of accurate diagnostic information.
