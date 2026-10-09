@@ -11,8 +11,6 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-Here is a detailed, comprehensive study note for **Chapter 15: Program failure**, generated directly from the provided text of _Modern C: A Guide to the C23 Standard_.
-
 ## 15.1 Wrongdoings
 
 ### What it is
