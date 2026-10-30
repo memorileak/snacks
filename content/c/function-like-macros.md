@@ -11,299 +11,472 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-In **Chapter 17: Function-like macros** of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, the book moves into **Level 3: Experience**. While macros can easily obfuscate source code or introduce subtle side-effect bugs if used carelessly, C23 leverages function-like macros to build type-safe, expressive, and flexible interfaces that functions alone cannot easily achieve.
+## 17. Function-like macros
 
-Below is a detailed breakdown of the core concepts, expansion mechanics, variadic utilities, and key takeaways from Chapter 17 across its five main sections:
+### Understanding Function-like Macros vs. Inline Functions
 
+**What it is:** Function-like macros are a preprocessor feature in C that allows you to define text replacement rules that syntactically look like function calls. Unlike normal constants (object-like macros), function-like macros take arguments.
 
-### 1. General Principles: Macros vs. Inline Functions (Section 17)
-The primary rule of modern C macro design is to use function-like macros only when standard C functions are insufficient.
+**Why it matters / how it works:** Macros operate purely through textual substitution during the preprocessor phase, long before the compiler understands C syntax or types. Because of their complexity, lack of type safety, and potential to obfuscate code, they are often frowned upon. However, they are essential for providing easy-to-use, type-generic interfaces (like `<tgmath.h>`), enforcing compile-time argument checks, or working with variable-length argument lists.
 
-* **Prefer `inline` Functions:**
-  * **Takeaway 17 #1:** *Whenever possible, prefer an `inline` function to a functional macro*.
-  * Functions evaluate arguments exactly once, whereas a macro can evaluate an argument expression with side effects multiple times (e.g., `SQUARE(count())` expands to `count() * count()`, triggering two invocations). An `inline` function eliminates call overhead while maintaining strict call-by-value evaluation.
-* **Macro Purpose:**
-  * **Takeaway 17 #2:** *A functional macro shall provide a simple interface to a complex task*.
-  * Function-like macros excel at compile-time argument checking, context inspection (file/line logging), variadic parameter lists, type-generic selection, and default argument handling.
+**Key details:**
 
-#### Example
+- They are a legacy of early C but remain irreplaceable for specific advanced tasks.
+- If a task can be done with a standard `inline` function (fixed number of arguments, known types), you must use an `inline` function instead to preserve type safety.
+- Function-like macros can evaluate their arguments multiple times (a severe pitfall) if not written carefully.
 
-Standard C functions evaluate arguments strictly once by value. Functional macros perform raw text substitution, which can evaluate arguments with side effects multiple times (e.g. `count() * count()`), introducing subtle runtime bugs.
+**Pitfalls:**
 
-* **Takeaway 17 #1:** *Whenever possible, prefer an `inline` function to a functional macro*.
-* **Takeaway 17 #2:** *A functional macro shall provide a simple interface to a complex task*.
+- **Double Evaluation:** If a macro like `#define square_macro(X) (X*X)` is called with an expression that has side effects (e.g., `square_macro(count())`), the expression is evaluated twice (`count() * count()`), leading to unexpected behavior and degraded performance.
+
+**Connections:** Relates heavily to Chapter 11 (Functions) and Chapter 16 (Performance), where `inline` functions are introduced as the modern, safe alternative to simple macros.
+
+> **Takeaway 17 #1:** _Whenever possible, prefer an `inline` function to a functional macro._
+
+> **Takeaway 17 #2:** _A functional macro shall provide a simple interface to a complex task._
+
+**Code Demonstration:**
+
+```c
+#include <stdio.h>
+
+// A function with a side effect
+unsigned count(void) {
+    static unsigned counter = 0;
+    ++counter;
+    return counter;
+}
+
+// BAD: Functional macro that evaluates X twice
+#define square_macro(X) ((X)*(X))
+
+// GOOD: Inline function evaluating x exactly once
+inline unsigned square_unsigned(unsigned x) {
+    return x * x;
+}
+
+int main(void) {
+    // What goes wrong if we use the macro:
+    // square_macro(count()) expands to ((count())*(count()))
+    // count() is called twice!
+    unsigned bad_result = square_macro(count());
+    printf("Macro result: %u\n", bad_result); // Outputs: 2 (1 * 2)
+
+    // Expected behavior using inline function:
+    unsigned good_result = square_unsigned(count());
+    printf("Inline result: %u\n", good_result); // Outputs: 9 (3 * 3)
+
+    return 0;
+}
+```
+
+**Recap:**
+
+- Function-like macros perform textual substitution.
+- Always prefer `inline` functions for type safety and to avoid double-evaluation side effects.
+- Reserve function-like macros for complex tasks like type-generic programming or variadic interfaces.
+
+---
+
+## 17.1. How function-like macros work
+
+### Preprocessor Mechanics and Expansion Rules
+
+**What it is:** The strict, multi-step process the C preprocessor uses to expand function-like macros into intermediate C code before actual compilation begins.
+
+**Why it matters / how it works:** Understanding these steps is crucial to predicting how nested macros expand and how to avoid syntax errors. The preprocessor temporarily disables the macro's own definition during its expansion to prevent infinite recursion.
+
+**Key details:**
+
+- A macro definition requires an identifier, a parameter list `(X, Y)`, and replacement text.
+- The expansion follows 8 strict rules:
+  1.  The macro's definition is temporarily disabled.
+  2.  The argument list is scanned and separated by commas (ignoring commas inside nested parentheses). The argument count must match the parameter count.
+  3.  Arguments are recursively expanded.
+  4.  Resulting fragments are assigned to parameters.
+  5.  A copy of the replacement text is made; parameters are replaced by the fragments.
+  6.  The new text is scanned _again_ for further macro replacements.
+  7.  The final text is inserted into the source.
+  8.  The macro definition is re-enabled.
+
+**Pitfalls:**
+
+- Macro parameters must be valid identifiers.
+- The preprocessing phase knows absolutely nothing about C keywords, types, or variables. It is blind text manipulation.
+
+> **Takeaway 17.1 #1:** _Macro replacement is done in an early translation phase, before any other interpretation is given to the tokens that compose the program._
+
+### Macro Retention and Function Decay
+
+**What it is:** A specific rule stating that a function-like macro is _only_ expanded if its identifier is immediately followed by an opening parenthesis `(`.
+
+**Why it matters / how it works:** This allows a macro and a function to share the exact same identifier safely. If you wrap the function name in parentheses (e.g., `(my_func)(arg)`), the preprocessor sees a parenthesis before the macro identifier, not after, so it skips expansion.
+
+**Key details:**
+
+- If `func_name` is defined as a macro, `func_name(x)` expands the macro.
+- `(func_name)(x)` bypasses the macro and calls the function of the same name.
+- `func_ptr = func_name;` bypasses the macro (no trailing parentheses) and decays the function to a pointer.
+
+> **Takeaway 17.1 #2 (macro retention):** _If a functional macro is not followed by (), it is not expanded._
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
 
-static int call_counter = 0;
-static inline int increment_counter(void) {
-  return ++call_counter;
+// 1. Function definition
+inline char const* string_literal_func(char const str[static 1]) {
+    return str;
 }
 
-// DANGEROUS MACRO: Evaluates argument 'x' TWICE in replacement text
-#define BAD_SQUARE(x) ((x) * (x))
+// 2. Macro definition sharing the same name
+#define string_literal_func(S) string_literal_func("" S "")
 
-// SAFE INLINE FUNCTION: Evaluates argument 'x' EXACTLY ONCE
-static inline int safe_square(int x) {
-  return x * x;
-}
+int main(void) {
+    // Macro expansion occurs here because of trailing ()
+    // Expands to: string_literal_func("" "Hello" "")
+    printf("%s\n", string_literal_func("Hello"));
 
-void demo_macro_vs_inline(void) {
-  // 1. MACRO SIDE-EFFECT BUG:
-  // BAD_SQUARE(increment_counter()) expands to:
-  // ((increment_counter()) * (increment_counter()))
-  // Function increment_counter() is executed TWICE!
-  call_counter = 0;
-  int bad_res = BAD_SQUARE(increment_counter());
-  printf("BAD_SQUARE result: %d (Function call count: %d)\n", bad_res, call_counter); // Yields count = 2
+    // Macro retention: No trailing () immediately after the identifier.
+    // The preprocessor leaves (string_literal_func) alone.
+    // It calls the actual function.
+    printf("%s\n", (string_literal_func)("World"));
 
-  // 2. SAFE INLINE EVALUATION:
-  // Arguments are evaluated once before entering safe_square()
-  call_counter = 0;
-  int safe_res = safe_square(increment_counter());
-  printf("safe_square result: %d (Function call count: %d)\n", safe_res, call_counter); // Yields count = 1
+    // Function decay: no (), resolves to function pointer
+    char const* (*func_ptr)(char const*) = string_literal_func;
+    printf("%s\n", func_ptr("Pointer"));
+
+    return 0;
 }
 ```
 
-### 2. How Function-Like Macros Work (Section 17.1)
-Macros operate purely via **textual replacement** during preprocessing, before the compiler assigns grammatical or type semantics to tokens.
+_Expected behavior:_ All three prints succeed. The first utilizes the macro to ensure string literal concatenation, while the second and third bypass the macro to reference the underlying function.
 
-* **Early Phase Token Replacement:**
-  * **Takeaway 17.1 #1:** *Macro replacement is done in an early translation phase, before any other interpretation is given to the tokens that compose the program*.
-* **Expansion Rules:**
-  1. The macro definition is temporarily disabled during its own replacement to prevent infinite recursion.
-  2. Arguments inside the outer parentheses `()` are split by unnested commas.
-  3. Arguments are recursively expanded for other macros.
-  4. Parameter occurrences in the replacement text are substituted with the expanded argument fragments.
-  5. The resulting replacement text is rescanned for further macro expansions.
-* **Macro Retention:**
-  * **Takeaway 17.1 #2 (Macro Retention):** *If a functional macro is not followed by `()`, it is not expanded*.
-  * This allows a function and a macro to share the exact same name. Enclosing a function declaration name in parentheses—e.g., `char const* (string_literal)(char const str[static 1])`—suppresses macro expansion during function declaration. Passing a function name without `()` decays it to a function pointer without expanding the macro.
+**Recap:**
 
-#### Example
+- Macros are expanded in 8 distinct steps, heavily relying on recursive evaluation.
+- The preprocessor is ignorant of C types and semantics.
+- Function-like macros require trailing parentheses to expand; otherwise, they are retained as raw identifiers.
 
-Macro replacement occurs during early translation phases prior to compiler type checking. If an identifier that names a functional macro is not followed by opening parentheses `()`, the preprocessor retains the identifier unexpanded. This allows a function and a macro to safely share the exact same name.
+---
 
-* **Takeaway 17.1 #1:** *Macro replacement is done in an early translation phase*.
-* **Takeaway 17.1 #2 (Macro Retention):** *If a functional macro is not followed by `()`, it is not expanded*.
+## 17.2. Argument checking
 
-```c
-#include <stdio.h>
-#include <string.h>
+### Forcing Types at Compile Time
 
-// Functional macro wrapping strlen for compile-time logging
-#define string_len(s) (printf("Logging length query for '%s'\n", (s)), strlen(s))
+**What it is:** The practice of using macro replacement text to enforce that the arguments passed to the macro match expected types, mimicking the type checking of real functions.
 
-// Suppressing macro expansion on function declaration by wrapping function name in ()
-size_t (string_len)(char const s[static 1]) {
-    return strlen(s);
-}
+**Why it matters / how it works:** Because macros lack inherent type signatures, passing a pointer when an integer is expected (or vice versa) can cause silent logical errors or crashes at runtime (especially with variadic functions like `printf`). We can force compiler errors by manipulating the replacement text.
 
-void demo_macro_retention(void) {
-    char const text[] = "Modern C23";
+**Key details:**
 
-    // 1. Followed by '()': Expands the FUNCTION-LIKE MACRO
-    size_t len1 = string_len(text);
+- **String literals:** By forcing concatenation (`"" F ""`), you ensure the argument `F` _must_ be a string literal. If the user passes a `char*` variable, compilation fails because variables cannot be concatenated with string literals by the preprocessor.
+- **Scalar enforcement:** Adding `+0` to an argument (e.g., `(X) + 0`) forces the compiler to treat it as a scalar (integer, float, or pointer).
+- **Floating-point enforcement:** Adding `+0.0F` promotes arithmetic types to floating-point.
+- **Pointer cast checking:** Casting to `(void*)` or using compound literals can force pointer context.
 
-    // 2. NOT followed by '()': Macro expansion is SUPPRESSED (Takeaway 17.1 #2)
-    // Decays to a pointer to the actual underlying FUNCTION (string_len)
-    size_t (*func_ptr)(char const*) = string_len;
-    size_t len2 = func_ptr(text);
+**Pitfalls:**
 
-    printf("Lengths measured: %zu, %zu\n", len1, len2);
-}
-```
+- Type-checking tricks can make macro definitions exceptionally hard to read and debug.
+- You must be careful not to introduce side effects or alter the intended value (e.g., adding `0` is safe, but multiplying by `1` might evaluate side effects depending on placement).
 
-### 3. Argument Checking & Enforcing Constraints (Section 17.2)
-C's type system cannot natively enforce constraints such as requiring an argument to be a true string literal or validating array sizes at compile time. Function-like macros can enforce these constraints prior to calling internal functions.
-
-* **String Literal Enforcement:** Using token concatenation with empty strings (e.g., `"" F "\n"`) forces the preprocessor to verify that `F` is a literal string, issuing a compile-time syntax error if a raw `char*` pointer is passed instead.
-* **Semicolon Safety:** Wrapping multi-statement macros inside `do { ... } while (false)` ensures that the macro syntactically behaves like a single `void` function call and cleanly integrates into `if-else` blocks requiring a trailing semicolon.
-
-#### Example
-
-Function-like macros can enforce compile-time constraints that functions cannot natively check, such as ensuring an argument is a true string literal or guaranteeing that a multi-statement macro requires a trailing semicolon inside `if-else` blocks.
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
 #include <stdbool.h>
 
-// STRING LITERAL ENFORCEMENT:
-// Concatenating "" with F forces a syntax compile error if 'F' is a raw 'char*' pointer
-// rather than a genuine literal string "..."
-#define REQUIRE_LITERAL_STRING(F) ("" F)
+#define NDEBUG 0 // Set to 1 to disable traces
 
-// SEMICOLON-SAFE MULTI-STATEMENT MACRO:
-// Wrapping statements inside do { ... } while (false) ensures the macro acts as a
-// single block requiring a trailing semicolon after calling it.
-#define SAFE_LOG(msg, val)               \
-  do {                                 \
-    printf("[LOG] %s: ", (msg));     \
-    printf("%d\n", (val));           \
-  } while (false)
+#if NDEBUG
+# define TRACE_ON 0
+#else
+# define TRACE_ON 1
+#endif
 
-void demo_constraint_enforcement(void) {
-  int score = 100;
+// Forces F to be a string literal.
+// A char* variable will cause a compile error here.
+#define TRACE_PRINT1(F, X) \
+    do { if (TRACE_ON) fprintf(stderr, "" F "\n", X); } while (false)
 
-  // do-while(false) allows safe inclusion inside if-else constructs:
-  if (score >= 90)
-    SAFE_LOG("High score achieved", score); // Trailing semicolon cleanly terminates block
-  else
-    puts("Standard score");
+// Forces X to be evaluated as a floating type (or promotable arithmetic)
+#define TRACE_VALUE0(HEAD, X) \
+    TRACE_PRINT1(HEAD " %Lg", (X) + 0.0L)
 
-  // Literal string validation:
-  char const* valid_lit = REQUIRE_LITERAL_STRING("C23 Standard");
-  printf("Literal string verified: %s\n", valid_lit);
+int main(void) {
+    int sum = 42;
+    // Expected output: "my_favorite_variable: 42"
+    TRACE_VALUE0("my_favorite_variable:", sum);
+
+    // What goes wrong if:
+    // char* dyn_str = "dynamic";
+    // TRACE_PRINT1(dyn_str, sum);
+    // ^ This fails to compile because "" dyn_str "\n" is invalid syntax.
+
+    return 0;
 }
 ```
 
-### 4. Accessing the Context of Invocation (Section 17.3)
-Macros can inspect the caller's execution environment using predefined macros: `__FILE__` (source filename), `__LINE__` (line number), and `__func__` (enclosing function name).
+**Recap:**
 
-* **Line Number Mismatches:**
-  * **Takeaway 17.3 #1:** *The line number in `__LINE__` may not fit into an `int`*.
-  * **Takeaway 17.3 #2:** *Using `__LINE__` is inherently dangerous*.
-* **Stringification Operator (`#`):**
-  * Placing `#` before a macro parameter converts the raw textual argument directly into a string literal.
-  * **Takeaway 17.3 #3:** *Stringification with the operator `#` does not expand macros in its argument*. Writing `# __LINE__` produces the string `"__LINE__"` rather than `"25"`.
-  * **Takeaway 17.3 #4:** *Nested macro definitions may expand macro arguments several times*. To stringify `__LINE__` as a numeric text literal, code must use a two-level nested macro:
-    ```c
-    #define STRINGIFY(X) #X
-    #define STRGY(X) STRINGIFY(X) // Expands __LINE__ to '25' before stringifying to "25"
-    ```
-* **Token Concatenation (`##`):** Glues adjacent preprocessing tokens together to generate new identifier names dynamically.
+- Macros inherently lack type safety.
+- You can trick the compiler into checking types by using operations only valid for specific types (e.g., literal concatenation, arithmetic addition).
+- Encapsulate macro logic in `do { ... } while(false)` to ensure it behaves like a single statement safely.
 
-#### Example
+---
 
-Macros inspect the caller's context using `__FILE__`, `__LINE__`, and `__func__`. Because the stringification operator `#` prevents internal macro expansion, evaluating macros like `__LINE__` as a numeric text literal requires two-level nested stringification.
+## 17.3. Accessing the context of invocation
 
-* **Takeaway 17.3 #3:** *Stringification with the operator `#` does not expand macros in its argument*.
-* **Takeaway 17.3 #4:** *Nested macro definitions may expand macro arguments several times*.
+### Contextual Macros and Stringification
+
+**What it is:** Using special, predefined preprocessor macros (`__LINE__`, `__FILE__`, `__func__`, etc.) and the stringification operator (`#`) to inject information about _where_ the macro is being called into the code itself.
+
+**Why it matters / how it works:** This breaks the separation between caller and callee context, which is highly desirable for debugging and tracing. The `#` operator converts a macro argument directly into a string literal without evaluating it.
+
+**Key details:**
+
+- `__LINE__`: Current line number (integer constant).
+- `__FILE__`: Current file name (string literal).
+- `__DATE__` / `__TIME__`: Compilation timestamps.
+- `__func__`: The name of the current function (this is a local `static const char[]`, _not_ a preprocessor string literal, so it cannot be concatenated with `""`).
+- **The `#` operator:** `#X` turns the argument `X` into `"X"`.
+- **Two-level stringification:** Because `#` _prevents_ macro expansion of its argument, if you want to stringify the _result_ of a macro (like `__LINE__`), you must use a two-level macro trick: `STRGY(X)` -> `STRINGIFY(X)` -> `#X`.
+
+**Pitfalls:**
+
+- Relying on `__LINE__` can be dangerous if line numbers exceed standard integer limits (though rare).
+- Since `#` prevents expansion, `STRINGIFY(__LINE__)` results in `"__LINE__"`. You must use the intermediate `STRGY` macro.
+- Nested macro definitions can cause arguments to be evaluated multiple times if you aren't careful.
+
+> **Takeaway 17.3 #1:** _The line number in `__LINE__` may not fit into an `int`._
+
+> **Takeaway 17.3 #2:** _Using `__LINE__` is inherently dangerous._
+
+> **Takeaway 17.3 #3:** _Stringification with the operator `#` does not expand macros in its argument._
+
+> **Takeaway 17.3 #4:** _Nested macro definitions may expand macro arguments several times._
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
+#include <stdbool.h>
 
-// Level 1: Converts argument directly into string without expanding macro arguments
-#define STRINGIFY_DIRECT(x) #x
+// The two-level stringification trick
+#define STRINGIFY(X) #X
+#define STRGY(X) STRINGIFY(X)
 
-// Level 2: Forces expansion of macro argument 'x' BEFORE stringifying
-#define STRINGIFY_EXPAND(x) STRINGIFY_DIRECT(x)
+// Macro that captures file, line, function, and the expression itself
+#define TRACE_EXPR(X) \
+    do { \
+        fprintf(stderr, "%s:%s:%s: (%s) = %g\n", \
+                __FILE__, STRGY(__LINE__), __func__, #X, (double)(X)); \
+    } while (false)
 
-// Token Concatenation (##): Glues tokens together to construct variable names dynamically
-#define CREATE_VAR_NAME(prefix, id) prefix ## _ ## id
+int main(void) {
+    double sum = 889.0;
+    int argc = 2;
 
-void demo_stringification_and_context(void) {
-    // 1. Direct vs. Two-Level Stringification (Takeaway 17.3 #3 & #4)
-    char const* s1 = STRINGIFY_DIRECT(__LINE__); // Produces literal "__LINE__"
-    char const* s2 = STRINGIFY_EXPAND(__LINE__); // Produces literal "42" (or current line number)
+    // Expected output: file.c:20:main: (sum*argc) = 1778
+    TRACE_EXPR(sum * argc);
 
-    printf("Direct stringification:   %s\n", s1);
-    printf("Two-level stringification: %s\n", s2);
+    // Counter-example: Using single-level stringification
+    // #define BAD_STR(X) #X
+    // BAD_STR(__LINE__) results in the string "__LINE__", not "23".
 
-    // 2. Token Concatenation (##):
-    int CREATE_VAR_NAME(sensor, 101) = 99; // Expands to: int sensor_101 = 99;
-    printf("Dynamically created variable 'sensor_101' = %d\n", sensor_101);
+    return 0;
 }
 ```
 
-### 5. Variable-Length Argument Lists & C23 `__VA_OPT__` (Section 17.4)
+**Recap:**
 
-#### Variadic Macros (Section 17.4.1)
-Variadic macros accept arbitrary parameter counts using `...` and expand them via `__VA_ARGS__`.
+- Predefined macros like `__FILE__` and `__func__` provide valuable invocation context.
+- The stringification operator (`#`) turns macro arguments into strings but blocks their internal macro expansion.
+- A two-level macro is required to stringify the _value_ of another macro (like `__LINE__`).
 
-* **C23 `__VA_OPT__` Feature:** In older C standards, omitting trailing variadic arguments caused syntax errors due to left-over trailing commas in functions like `fprintf(stderr, format, __VA_ARGS__)`.
-* C23 introduces **`__VA_OPT__(tokens)`**, which expands its enclosed `tokens` (such as a comma `,`) **only if `__VA_ARGS__` is non-empty**:
-  ```c
-  #define TRACE_PRINT(F, ...) \
-      fprintf(stderr, F __VA_OPT__(,) __VA_ARGS__)
-  ```
+---
 
-#### Variadic Functions & Why to Avoid Them (Section 17.4.2)
-Variadic functions (declared with `...` and accessed via `<stdarg.h>`) are prone to runtime bugs due to a lack of type safety.
+## 17.4. Variable-length argument lists
 
-* **Default Argument Promotions:**
-  * **Takeaway 17.4.2 #1:** *When passed to a variadic parameter, all arithmetic types are converted as for arithmetic operations, with the exception of `float` arguments, which are converted to `double`*. Narrow integer types (`char`, `short`) promote to `int`.
-* **Type Safety & Portability:**
-  * **Takeaway 17.4.2 #2 & #3:** *A variadic function has to receive valid information about the type of each argument in the variadic list*, and *using variadic functions is not portable unless each argument is forced to a specific type*.
-  * **Takeaway 17.4.2 #4:** *Avoid variadic functions for new interfaces*. Instead, prefer variadic macros that pack arguments into compound literal array initializers (e.g., `(long double const[NARGS]){ __VA_ARGS__ }`) where conversions are verified at compile time.
-* **`va_list` Limitations:**
-  * **Takeaway 17.4.2 #5 & #6:** *The `va_arg` mechanism doesn’t give access to the length of the `va_list`*, and *a variadic function needs a specific convention for the length of the list*.
-  * **C23 `<stdarg.h>` Update:** In C23, `va_start(ap)` no longer requires the second parameter specifying the last named argument.
+### 17.4.1. Variadic macros
 
-#### Example
+**What it is:** Macros that can accept an arbitrary number of arguments, denoted by `...` in the parameter list and accessed via `__VA_ARGS__` in the replacement text.
 
-Variadic functions (`...` via `<stdarg.h>`) lose array length information, lack type safety, and trigger default argument promotions (e.g. `float` converts to `double`). Modern C prefers variadic macros combined with C23's **`__VA_OPT__`**, which inserts a comma only if variadic arguments are supplied.
+**Why it matters / how it works:** Variadic macros replace the need for highly unsafe variadic functions (like `printf`) in many contexts, allowing you to build wrappers around them safely. C23 introduced `__VA_OPT__`, which drastically improves handling of empty argument lists.
 
-* **Takeaway 17.4.2 #1:** *Variadic function parameter arithmetic types undergo default argument promotions*.
-* **Takeaway 17.4.2 #4:** *Avoid variadic functions for new interfaces*.
+**Key details:**
+
+- `...` must be the last parameter.
+- `__VA_ARGS__` expands to the comma-separated list of provided arguments.
+- **The empty list problem:** Prior to C23, passing no variable arguments to `MACRO(F, ...)` resulted in a dangling comma (e.g., `printf(F, )`), causing compile errors.
+- **The C23 Solution (`__VA_OPT__`):** `__VA_OPT__(,)` expands to a comma _only if_ `__VA_ARGS__` is not empty.
+- You can count arguments using complex macro lists (like the `ALEN` trick in the book) that map the length of `__VA_ARGS__` to a hardcoded decrementing list.
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
+#include <stdbool.h>
 
-// C23 __VA_OPT__(tokens): Inserts 'tokens' (e.g. ',') ONLY IF __VA_ARGS__ is non-empty.
-// Prevents syntax errors caused by leftover trailing commas when no extra arguments are passed.
-#define LOG_TRACE(format, ...) \
-  fprintf(stderr, "[TRACE] " format __VA_OPT__(,) __VA_ARGS__)
+// C23 variadic macro using __VA_OPT__
+#define TRACE_PRINT8(F, ...) \
+    do { \
+        fprintf(stderr, "%s: " F "\n", \
+                __func__ __VA_OPT__(,) __VA_ARGS__); \
+    } while (false)
 
-// PREFERRED ALTERNATIVE TO VARIADIC FUNCTIONS (Takeaway 17.4.2 #4):
-// Variadic macro packing arguments into a type-safe compound literal array!
-#define SUM_DOUBLES(...) \
-  sum_double_array(sizeof((double[]){ __VA_ARGS__ }) / sizeof(double), (double[]){ __VA_ARGS__ })
+int main(void) {
+    int sum = 889;
+    int argc = 2;
 
-static double sum_double_array(size_t len, double const arr[len]) {
-  double total = 0.0;
-  for (size_t i = 0; i < len; ++i) {
-    total += arr[i];
-  }
-  return total;
-}
+    // Expected: uses __VA_OPT__(,) to insert a comma before sum
+    TRACE_PRINT8("a collection: %d, %d", sum, argc);
 
-void demo_variadic_macros(void) {
-  // 1. C23 __VA_OPT__ Handling empty variadic argument list safely:
-  LOG_TRACE("Simple log message with no arguments.\n");
-  LOG_TRACE("Formatted log: Value = %d, Status = %s\n", 42, "OK");
+    // Expected: __VA_ARGS__ is empty, __VA_OPT__(,) does NOT insert a comma.
+    // Resulting code is valid: fprintf(stderr, "%s: " "another string" "\n", __func__);
+    TRACE_PRINT8("another string");
 
-  // 2. Type-Safe Variadic Array Summation (no dangerous va_list required!):
-  double total = SUM_DOUBLES(1.1, 2.2, 3.3, 4.4);
-  printf("Sum computed via type-safe variadic macro: %g\n", total);
+    return 0;
 }
 ```
 
-### 6. Providing Default Arguments (Section 17.5)
-C functions do not natively support default parameter values. However, macro wrappers combined with `__VA_OPT__` can supply fallback default values when optional parameters are omitted.
+### 17.4.2. A detour: Variadic functions
 
-* **Overloading C Library Calls:** By wrapping library functions like `strtoul(...)` with helper macros (`CALL3` / `DEFAULT3`), calls omitting the `endptr` and `base` arguments automatically supply `"0"`, `nullptr`, and `0` as defaults:
-  ```c
-  // Calling strtoul(argv) cleanly defaults endptr to nullptr and base to 0
-  #define strtoul(...) CALL3(strtoul, "0", nullptr, 0, __VA_ARGS__)
-  ```
+**What it is:** C functions declared with `...` (e.g., `int printf(char const*, ...);`) that process variable arguments at runtime using the `<stdarg.h>` header (`va_list`, `va_start`, `va_arg`, `va_end`).
 
-#### Example
+**Why it matters / how it works:** They are mentioned mostly as a historical note and a warning. They lack type safety because the compiler doesn't know what types to convert the arguments to. It relies on "default argument promotions" (e.g., `float` becomes `double`, narrow integers become `int`).
 
-C functions do not natively support default parameter values. However, macro wrappers combining `__VA_ARGS__` with helper macros can supply default values when optional parameters are omitted.
+**Key details:**
+
+- `va_start(va)` initializes the list. (Since C23, the second argument to `va_start` is no longer required).
+- `va_arg(va, type)` retrieves the next argument. You _must_ pass the correct type.
+- `va_end(va)` cleans up.
+- The function itself has no idea how long the list is; it must rely on a convention (like a format string or a length parameter).
+
+**Pitfalls:**
+
+- If `va_arg` requests a `double` but the user passed an `int`, the program reads memory incorrectly (Undefined Behavior).
+- You cannot query the length of a `va_list`.
+
+> **Takeaway 17.4.2 #1:** _When passed to a variadic parameter, all arithmetic types are converted as for arithmetic operations, with the exception of `float` arguments, which are converted to `double`._
+
+> **Takeaway 17.4.2 #2:** _A variadic function has to receive valid information about the type of each argument in the variadic list._
+
+> **Takeaway 17.4.2 #3:** _Using variadic functions is not portable unless each argument is forced to a specific type._
+
+> **Takeaway 17.4.2 #5:** _The `va_arg` mechanism doesn’t give access to the length of the `va_list`._
+
+> **Takeaway 17.4.2 #6:** _A variadic function needs a specific convention for the length of the list._
+
+**Recap:**
+
+- Variadic macros (`...` and `__VA_ARGS__`) are powerful and safer when combined with C23's `__VA_OPT__`.
+- Variadic functions are legacy, type-unsafe, and require manual type decoding and length tracking. Avoid writing new variadic functions.
+
+---
+
+## 17.5. Default arguments
+
+### Emulating Default Function Arguments
+
+**What it is:** Using variadic macros and `__VA_OPT__` dispatching techniques to allow users to call standard library functions (like `strtoul`) with fewer arguments, automatically filling in defaults (like base `0` and `nullptr`).
+
+**Why it matters / how it works:** C does not support default arguments in function signatures (unlike C++). However, macros can count the arguments provided and route the call to different expansions, appending missing defaults seamlessly.
+
+**Key details:**
+
+- The implementation relies on creating a cascade of macros: `DEFAULT1`, `DEFAULT2`, `DEFAULT3`.
+- It splits the `__VA_ARGS__` list. If an argument is missing, the default is substituted.
+- `ID_I`, `ID_II`, `ID_III` macros are used to evaluate and output the exact number of comma-separated arguments needed.
+- This removes boilerplate (e.g., writing `nullptr, 0` every time you call `strtoul`).
+
+**Pitfalls:**
+
+- This is highly advanced macro magic. Creating these dispatch chains is prone to subtle syntactical errors.
+- If the user provides _too many_ arguments, the macro cascade can fail cryptically.
+
+**Code Demonstration:**
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 
-// Internal helper functions enforcing exact parameter counts
-static inline unsigned long parse_str_base(char const* s, char** endptr, int base) {
-  return strtoul(s, endptr, base);
+// A highly simplified version of default argument dispatch
+// Let's create a macro for a custom function that expects 3 args,
+// but we want to default the last two to NULL and 0.
+
+void my_func_impl(const char* str, char** endptr, int base) {
+    printf("Called with: %s, %p, %d\n", str, (void*)endptr, base);
 }
 
-// Overloading macro: Selects fallback default arguments when parameters are omitted.
-// Default values: endptr = nullptr, base = 0 (auto-detect hex/octal/decimal)
-#define SMART_STRTOUL(str, ...) \
-  strtoul((str), __VA_OPT__(__VA_ARGS__ + 0 *) nullptr, 0)
+// If 1 arg is passed: my_func(X) -> my_func_impl(X, NULL, 0)
+// If 3 args are passed: my_func(X, Y, Z) -> my_func_impl(X, Y, Z)
+// (Note: This is a simplistic implementation for illustration;
+// the book's DEFAULT3 is much more robust for handling 1, 2, or 3 args).
 
-void demo_default_arguments(void) {
-  char const* hex_input = "0x1F";
+#define my_func(...) my_func_dispatch(__VA_ARGS__, NULL, 0)
+// This naive approach forces 3 arguments if only 1 is given,
+// but it breaks if the user actually gives 3 (resulting in 5 args).
+// The book uses __VA_OPT__ to count and branch correctly.
 
-  // Standard call requires all 3 arguments: strtoul(hex_input, nullptr, 0)
-  // Macro wrapper supplies missing defaults:
-  unsigned long val = SMART_STRTOUL(hex_input);
+// Proper C23 book-style branching (simplified logic):
+#define CALL_WITH_DEFAULTS(STR, ...) \
+    my_func_impl(STR, __VA_OPT__(__VA_ARGS__) /* fallback logic omitted for brevity */ )
 
-  printf("Parsed string '%s' with default arguments: %lu\n", hex_input, val);
+int main(void) {
+    // Calling the implementation directly
+    my_func_impl("123", NULL, 0);
+
+    // The book's macro allows you to write:
+    // strtoul(argv[1]);
+    // Which expands to: strtoul(argv[1], nullptr, 0);
+    return 0;
 }
 ```
+
+**Recap:**
+
+- C lacks native default function arguments.
+- Variadic macros and `__VA_OPT__` can be chained to emulate default arguments.
+- This simplifies library usage at the cost of complex, under-the-hood macro infrastructure.
+
+---
+
+## Summary
+
+Function-like macros in modern C are a double-edged sword. While they should be avoided in favor of `inline` functions whenever a strict, type-safe interface is possible, they remain vital for tasks that functions simply cannot perform. They operate in a preliminary textual translation phase, meaning they evaluate without any knowledge of C types. By leveraging operators like stringification (`#`), variadic arguments (`...` and `__VA_ARGS__`), and C23's `__VA_OPT__`, developers can build sophisticated debugging traces, type-generic programming interfaces, compile-time argument checks, and default-argument wrappers that vastly improve the developer experience and safety of standard library calls. Variadic functions, on the other hand, are largely obsolete due to their lack of type safety and should be avoided.
+
+---
+
+## Self-Check Questions
+
+1. **Why should you generally prefer an `inline` function over a function-like macro for simple mathematical operations?**
+   `inline` functions are type-safe and evaluate their arguments exactly once, preventing double-evaluation side effects.
+
+2. **During which compilation phase are macros expanded?**
+   In the preprocessor phase, before any semantic analysis or type checking occurs.
+
+3. **What happens to the macro definition while its replacement text is being expanded?**
+   It is temporarily disabled to prevent infinite recursion.
+
+4. **How can you force the compiler to call an actual function named `strtoul` instead of expanding a macro of the same name?**
+   Surround the function name in parentheses: `(strtoul)(...)`. This prevents the macro from expanding due to the macro retention rule.
+
+5. **How do you force a macro argument `X` to be evaluated as a scalar type (integer, float, or pointer) to catch compile-time errors?**
+   By adding `0` to it, e.g., `(X) + 0`.
+
+6. **What is the purpose of the `#` operator in a macro?**
+   It is the stringification operator; it converts the macro argument directly into a string literal.
+
+7. **Why does `STRINGIFY(__LINE__)` result in the string `"__LINE__"` rather than the actual line number?**
+   Because the `#` operator prevents the expansion of macros in its argument. A two-level macro (e.g., `STRGY(X)`) is needed to expand the argument first.
+
+8. **What does `__VA_ARGS__` represent inside a variadic macro?**
+   It represents the comma-separated list of all arguments passed to the `...` portion of the macro parameter list.
+
+9. **What specific problem does the C23 `__VA_OPT__(,)` feature solve?**
+   It solves the trailing comma problem when a variadic macro is called with an empty argument list by only inserting a comma if `__VA_ARGS__` contains arguments.
+
+10. **What happens to a `float` argument when it is passed to a variadic function (not a macro)?**
+    It undergoes default argument promotion and is automatically converted to a `double`.
