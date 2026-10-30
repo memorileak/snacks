@@ -4,215 +4,342 @@ description = "An introduction to C23 control flow, covering conditional executi
 date = 2026-09-27T16:34:00Z
 
 [taxonomies]
-tags = ["modernc"]
+tags = ["modernc", "basic"]
 
 [extra]
 math = true
 # cover.image = "images/cover.png"
 +++
 
-Chapter 3 of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, titled **"Everything is about control,"** shifts focus from basic syntax and declarations to managing the execution path (control flow) of a program. While function calls provide unconditional transfers of control, C provides **five primary conditional control statements**: `if`, `for`, `do`, `while`, and `switch`.
+## 3. Everything is about control
 
-Here is a detailed breakdown of the most important concepts, structural rules, and takeaways from this chapter:
+### The Concept of Control Flow
 
+**What it is:** Control flow refers to the order in which individual statements, instructions, or function calls of an imperative program are executed or evaluated. In C, control is transferred either unconditionally (via function calls and returns) or conditionally (via specialized control statements).
 
-### 1. Conditional Execution: `if` and `if-else` (Section 3.1)
-The `if` construct executes a secondary block of code based on whether a controlling expression evaluates to true or false. Adding an `else` branch creates a selection statement that directs execution down one of two distinct code paths.
+**Why it matters / how it works:** Without control flow constructs, a program would execute strictly from top to bottom, one statement at a time, making it impossible to perform tasks that require decision-making or repetition. The C language provides five primary conditional control statements: `if`, `for`, `do`, `while`, and `switch`. These evaluate a condition (often a Boolean expression or integer value) to dictate which path the abstract state machine takes.
 
-* **Numerical Truth Rules:**
-  * **Takeaway 3.1 #1:** **The value `0` represents logical `false`**.
-  * **Takeaway 3.1 #2:** **Any value different from `0` represents logical `true`**.
-* **Scalar Truth Values:**
-  * **Takeaway 3.1 #4:** **All scalars have a truth value**. Numerical types (`size_t`, `int`, `double`, `bool`) and pointer types are scalar types, meaning any scalar variable can be passed directly as a controlling condition.
-* **Clean Boolean Testing:**
-  * **Takeaway 3.1 #3:** **Don't compare to `0`, `false`, or `true`**. Writing `if (b == true)` or `if (x != 0)` is redundant and clutters code. Instead, test boolean or scalar expressions directly (e.g., `if (b)` or `if (x)` or `if (!x)`).
+**Key details:**
 
-#### Example
+- Functions are a form of _unconditional_ control transfer (`call` transfers to the function, `return` transfers back).
+- C has other conditional constructs discussed later: the ternary operator (`? :`), preprocessor conditionals (`#if`, `#ifdef`), and type-generic selection (`_Generic`).
 
-In C, controlling conditions evaluate scalar expressions directly. 
-* **Takeaway 3.1 #1 & #2:** `0` represents logical `false`; any non-zero value represents logical `true`.
-* **Takeaway 3.1 #4:** All scalars (integers, floats, pointers, booleans) have an inherent truth value.
-* **Takeaway 3.1 #3:** Don't compare directly to `0`, `false`, or `true` (e.g., write `if (b)` instead of `if (b == true)`).
+**Pitfalls:** Assuming statements always execute sequentially can lead to bugs, especially when loops or complex conditions cause jumps that skip necessary variable initializations or resource cleanups.
+
+**Connections:** Links to earlier concepts of the _abstract state machine_ (Chapter 5) and future chapters on variations in control flow (Chapter 19) involving `goto`, `longjmp`, and signal handlers.
+
+---
+
+## 3.1. Conditional execution
+
+### The `if` Statement and Boolean Context
+
+**What it is:** The `if` statement evaluates a controlling expression to decide whether to execute a subsequent block of code (the secondary block). It allows for branching logic where code is executed only if a certain condition holds true, optionally providing an `else` path if the condition is false.
+
+**Why it matters / how it works:** Conditional execution allows software to react to data and states. In C, the controlling expression is placed in parentheses, and the selection evaluates whether this expression is "true" or "false". C does not restrict this evaluation strictly to the `bool` type; any numeric value can act as a condition.
+
+**Key details:**
+
+- General syntax: `if (condition) secondary-block0 else secondary-block1`.
+- The secondary block is usually a compound statement enclosed in curly braces `{ ... }`.
+- Comparisons can use operators like `==` (equality) and `!=` (inequality).
+- Any numeric evaluation can serve directly as a conditional without needing explicit logical operators.
+
+> Takeaway 3.1 #1: _The value 0 represents logical false._
+
+**Explanation:** In C's boolean context, any integer, floating-point, or pointer value that evaluates to exactly zero is treated as `false`. This is baked into the language's core design.
+
+> Takeaway 3.1 #2: _Any value different from 0 represents logical true._
+
+**Explanation:** Conversely, any non-zero value, whether it is `1`, `-42`, `3.14`, or a valid memory address, is evaluated as logical `true`.
+
+> Takeaway 3.1 #3: _Don't compare to 0, false, or true._
+
+**Explanation:** Because of C's built-in interpretation of numeric values as truth values, explicitly comparing a variable to `0`, `true`, or `false` (e.g., `if (i != 0)`) is redundant and considered poor coding style by experienced C programmers. Instead of `if (b != false == true)`, one should simply write `if (b)`. The negation is handled directly with the `!` operator (e.g., `if (!b)`).
+
+> Takeaway 3.1 #4: _All scalars have a truth value._
+
+**Explanation:** In C, "scalar types" include all numerical types (such as `size_t`, `int`, `double`, `bool`) and pointer types. Because they are scalars, they can be directly evaluated in an `if`, `while`, or `for` condition to determine their truth value based on whether they are non-zero.
+
+**Pitfalls:**
+
+- Accidentally using the assignment operator `=` instead of the equality operator `==` in an `if` condition (e.g., `if (a = 0)` assigns 0 to `a` and evaluates to false, which is rarely what the programmer intends).
+- Relying on floating-point exactness for true/false evaluation can be dangerous due to precision issues (e.g., `if (float_val)` might evaluate to true if it is `0.0000001` due to rounding).
+
+**Connections:** Connects to the scalar types overview in Table 3.1 (Chapter 5 basics), including `size_t`, `double`, and pointer types.
+
+#### Code Demonstration: Conditional Execution
 
 ```c
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
-#include <stddef.h>
 
-void demo_conditional_execution(void) {
-    bool flag = true;
-    size_t count = 42;
-    double const* ptr = nullptr; // C23 null pointer constant
+int main(void) {
+    size_t count = 5;
+    bool is_ready = true;
+    double offset = 0.0;
 
-    // GOOD PRACTICE (Takeaway 3.1 #3): Test boolean expressions directly
-    if (flag) { 
-        printf("Flag is set (clean boolean test)\n");
+    // Demonstrating Takeaway 3.1 #1 and #2: 0 is false, non-zero is true.
+    // Demonstrating Takeaway 3.1 #3: Using the value directly without explicit comparison.
+    if (count) { // Equivalent to (count != 0). Evaluates to true.
+        printf("Count is non-zero (true).\n");
     }
 
-    // BAD PRACTICE (Avoid!): if (flag == true) or if ((flag != false) == true)
-    // Redundant comparisons clutter code and add visual noise.
-
-    // SCALAR TRUTH VALUES (Takeaway 3.1 #1, #2, #4):
-    // Integer count (42 != 0) evaluates to true directly
-    if (count) { 
-        printf("Count is non-zero (%zu) -> evaluates to true\n", count);
+    if (!offset) { // offset is 0.0, which evaluates to false. ! false is true.
+        printf("Offset is zero.\n");
     }
 
-    // Testing logical negation (!ptr evaluates to true when ptr is nullptr)
-    if (!ptr) { 
-        printf("Pointer is null -> !ptr evaluates to true\n");
+    // Demonstrating Takeaway 3.1 #4: Scalars (bool here) have a truth value.
+    if (is_ready) {
+        printf("System is ready.\n");
     }
 
-    // if-else selection statement branching
-    size_t threshold = 50;
-    if (count > threshold) {
-        printf("Count exceeds threshold\n");
-    } else {
-        printf("Count (%zu) is within threshold (%zu)\n", count, threshold);
+    // What goes wrong if we violate Takeaway 3.1 #3 (bad style):
+    if (is_ready == true) { // Redundant and amateurish
+        printf("Still ready, but poorly written.\n");
     }
+
+    return EXIT_SUCCESS;
 }
 ```
 
-### 2. Iterations: `for`, `while`, and `do-while` (Section 3.2)
-C provides three construct types to repeat execution over a domain or until a condition is met:
+_Expected behavior/output:_ The program will print "Count is non-zero (true).", "Offset is zero.", "System is ready.", and "Still ready, but poorly written." to the console.
+_What goes wrong if..._ If you write `if (count = 0)` instead of `if (count == 0)`, `count` is mutated to 0, the expression evaluates to `0` (false), and the block is skipped unexpectedly.
 
-* **Domain Iteration (`for`):**
-  * Structure: `for (clause1; condition2; expression3) secondary-block`.
-  * `clause1` initializes or defines the loop variable (scope is narrowly restricted to the loop).
-  * `condition2` tests if iteration should continue before each pass.
-  * `expression3` updates the loop variable at the end of each iteration.
-  * `for` is the preferred tool for domain iterations where bounds are known.
-* **Pre-Test Condition Iteration (`while`):**
-  * Structure: `while (condition) secondary-block`.
-  * Evaluates the condition before running the body. If the condition starts as `false`, the secondary block executes **zero times**.
-* **Post-Test Condition Iteration (`do-while`):**
-  * Structure: `do secondary-block while (condition);`.
-  * Runs the secondary block unconditionally **at least once** before evaluating the condition. Syntactically, it requires a terminating semicolon `;` after the condition.
-* **Loop Control Statements:**
-  * **`break`:** Immediately terminates the loop, skipping the rest of the body and the condition check.
-  * **`continue`:** Skips the remainder of the current loop body and jumps directly to the condition re-evaluation (or loop variable update in `for`).
-  * **Infinite Loop Idiom:** `for (;;)` is equivalent to `while (true)`.
+**Recap: Conditional execution**
 
-#### Example
+- `if` statements redirect control flow based on a condition.
+- `0` acts as `false`, and all other scalar values act as `true`.
+- Directly evaluate variables in control expressions instead of redundantly comparing them to `0` or `true`.
 
-C provides three primary iteration constructs:
-1. **`for`**: Preferred for domain iterations where bounds or iteration counts are known.
-2. **`while`**: Pre-tested loop; evaluates the condition *before* executing the body (may execute 0 times).
-3. **`do-while`**: Post-tested loop; executes the body *at least once* before testing.
+---
+
+## 3.2. Iterations
+
+### Domain Iteration with `for`
+
+**What it is:** Iteration is the mechanism of doing something repeatedly for a specified number of times or until a condition is met. The `for` statement is C's preferred mechanism for looping over a specific domain (a known sequence or range of values).
+
+**Why it matters / how it works:** Iterations drastically reduce code repetition. A `for` loop organizes iteration into a clean header with three clauses: initialization (`clause1`), loop condition (`condition2`), and iteration update (`expression3`). The condition is evaluated before every pass, and the update occurs at the end of the secondary block.
+
+**Key details:**
+
+- Syntax: `for (clause1; condition2; expression3) secondary-block`
+- `clause1` should ideally be a variable definition, scoping the loop variable tightly to the loop (e.g., `for (size_t i = 0; ...)`).
+- Multiple variables can be declared in `clause1` if they share the same type (e.g., `for (size_t i = 0, stop = 10; i < stop; ++i)`).
+- The condition is evaluated just like an `if` condition; if it evaluates to 0, the loop ends.
+- Omitting the middle condition, like `for (;;) `, creates an infinite loop (equivalent to `while(true)`).
+
+### `while` and `do-while` loops
+
+**What it is:** C provides two other looping constructs: `while` evaluates a condition before executing its block, and `do-while` evaluates the condition _after_ executing its block.
+
+**Why it matters / how it works:** These are used when the number of iterations isn't tied to a specific sequence or domain, but purely to a state condition. `do-while` guarantees that the secondary block is executed at least once because the truth check happens at the bottom of the loop.
+
+**Key details:**
+
+- Syntax: `while (condition) secondary-block`
+- Syntax: `do secondary-block while (condition);` (Note the necessary semicolon at the end).
+
+### `break` and `continue`
+
+**What it is:** These are jump statements specifically used inside loop blocks to alter standard iterative control flow.
+
+**Why it matters / how it works:** Sometimes a loop needs to end prematurely or skip the current cycle based on an internal check.
+
+**Key details:**
+
+- `break`: Immediately terminates the innermost enclosing loop statement. No further expressions in the block are executed, and the loop condition is not re-evaluated.
+- `continue`: Immediately stops executing the current iteration's block, jumps to the update expression (in a `for` loop), and re-evaluates the loop condition to decide whether to start the next iteration.
+
+**Pitfalls:**
+
+- **Unsigned Underflow:** In a loop like `for (size_t i = 9; i <= 9; --i)`, because `size_t` is unsigned, when `i` becomes `0` and is decremented, it wraps around to `SIZE_MAX`. Because `SIZE_MAX` is definitely not `<= 9`, the loop stops, but relying on underflow mechanics can be confusing and lead to infinite loops if the condition isn't carefully crafted.
+- Forgetting the trailing semicolon in a `do-while` loop results in a syntax error.
+
+**Connections:** Connects to C23's emphasis on block scope (declaring variables inside `for` headers) and array indexing (which relies heavily on `for` loops utilizing `size_t`).
+
+#### Code Demonstration: Iterations
 
 ```c
 #include <stdio.h>
-#include <stddef.h>
+#include <stdlib.h>
 #include <stdbool.h>
 
-void demo_iterations(void) {
-    // 1. DOMAIN ITERATION (for loop)
-    // Loop variable 'i' is declared inside the initial clause, restricting its scope to the loop.
-    // 'i' counts down from 5 to 1. The condition 'i' implicitly checks (i != 0).
-    printf("1. Countdown using 'for': ");
-    for (size_t i = 5; i; --i) {
-        printf("%zu ", i);
+int main(void) {
+    // 1. Standard domain iteration
+    printf("Domain Iteration:\n");
+    for (size_t i = 0, stop = 3; i < stop; ++i) {
+        printf("Iteration %zu\n", i);
     }
-    printf("\n");
 
-    // 2. PRE-TEST CONDITION ITERATION (while loop)
-    // Checks condition before each iteration. Runs 0 or more times.
-    size_t energy = 3;
-    printf("2. Energy drainage using 'while': ");
-    while (energy) { // Evaluates energy != 0
-        printf("[%zu remaining] ", energy);
-        --energy;
+    // 2. while loop with continue and break
+    printf("\nWhile loop with jumps:\n");
+    size_t count = 5;
+    while (count) { // Truth evaluation (count != 0)
+        --count;
+        if (count == 3) {
+            printf("Skipping 3...\n");
+            continue; // Skip the rest of this iteration
+        }
+        if (count == 0) {
+            printf("Breaking at 0 before print...\n");
+            break; // Terminate loop early
+        }
+        printf("Count is %zu\n", count);
     }
-    printf("\n");
 
-    // 3. POST-TEST CONDITION ITERATION (do-while loop)
-    // Runs secondary block AT LEAST ONCE before evaluating condition.
-    // Syntactically requires a terminating semicolon ';' after while(cond);.
-    size_t attempts = 0;
-    printf("3. Process loop using 'do-while': ");
+    // 3. do-while loop
+    printf("\nDo-while loop:\n");
+    bool execute_once = false;
     do {
-        ++attempts;
-        printf("(Attempt %zu executed) ", attempts);
-    } while (attempts < 1); // Condition checked after body execution
-    printf("\n");
+        printf("This executes at least once, even if condition is false.\n");
+    } while (execute_once);
 
-    // 4. BREAK AND CONTINUE CONTROL
-    printf("4. Loop with break and continue: ");
-    for (size_t k = 1; k <= 10; ++k) {
-        if (k % 2 == 0) {
-            continue; // Skip even numbers, jumping straight to ++k update
-        }
-        if (k > 7) {
-            break; // Terminate loop completely when k exceeds 7
-        }
-        printf("%zu ", k); // Prints 1 3 5 7
-    }
-    printf("\n");
+    return EXIT_SUCCESS;
 }
 ```
 
-### 3. Multiple Selection: `switch` (Section 3.3)
-The `switch` statement selects one of several code execution paths based on an integer value, replacing tedious cascades of `if-else` blocks.
+_Expected behavior/output:_
+The first loop prints Iterations 0, 1, 2. The while loop counts down, skips printing "3", prints "2", "1", and breaks exactly when count reaches 0 before the final print. The do-while loop prints its message exactly once.
 
-* **Jump Targets and Fall-Through:**
-  * `case` labels and `default` act as jump targets inside the `switch` block.
-  * When a matching `case` is found, control jumps there. Execution continues sequentially down into subsequent `case` blocks (**fall-through**) unless explicitly stopped by a **`break`** statement.
-  * The `default` label executes if no `case` matches the controlling expression.
-* **Strict Constraints on `case` Labels:**
-  * **Takeaway 3.3 #1:** **`case` values must be integer constant expressions**. Values must be fixed at compile time (e.g., literal numbers like `4` or character constants like `'m'`); variables cannot be used as `case` values.
-  * **Takeaway 3.3 #2:** **`case` values must be unique** within a single `switch` statement.
-  * **Takeaway 3.3 #3:** **`case` labels must not jump beyond a variable definition**.
+_What goes wrong if..._ If you place a `continue` inside a `while` loop before the condition variable is updated, it creates an infinite loop because the update step is skipped forever.
 
-#### Example
+**Recap: Iterations**
 
-The `switch` statement handles multi-way branching based on integer expressions. `case` labels act as **jump targets**; execution falls through into subsequent `case` blocks unless stopped by a `break` statement.
+- `for` loops are best for domain iterations and allow block-scoped loop variables.
+- `while` and `do-while` are used for condition-based looping.
+- `break` exits a loop entirely, while `continue` jumps to the next iteration cycle.
 
-* **Takeaway 3.3 #1:** `case` values must be integer constant expressions (ICE) known at compile time.
-* **Takeaway 3.3 #2:** `case` values must be unique within a single `switch` statement.
-* **Takeaway 3.3 #3:** `case` labels must not jump beyond a variable definition.
+---
+
+## 3.3. Multiple selection
+
+### The `switch` Statement
+
+**What it is:** The `switch` statement is a control flow construct that allows a program to test an integer or character expression against a list of constant values (`case` labels), providing a cleaner alternative to deep, complex `if-else if` cascades.
+
+**Why it matters / how it works:** When a variable can take on many specific values, `switch` makes the code significantly more readable. It works by evaluating the controlling expression once, then jumping execution directly to the matching `case` label. If no match is found, it jumps to the `default` label (if provided).
+
+**Key details:**
+
+- Syntax: `switch (expression) { case constant: ... break; default: ... }`.
+- The `case` and `default` keywords act merely as _jump targets_.
+- Execution _falls through_ sequentially into the next case unless explicitly stopped via a `break` statement. This can be used intentionally to group cases.
+
+> Takeaway 3.3 #1: _case values must be integer constant expressions._
+
+**Explanation:** You cannot use variables, arrays, or floating-point numbers in a `case` label. The compiler needs to know the exact integer value at compile time to build an efficient jump table. Characters like `'m'` or `'r'` are valid because they evaluate to integer constant expressions (ASCII values) in C.
+
+> Takeaway 3.3 #2: _case values must be unique for each switch statement._
+
+**Explanation:** A `switch` statement cannot have duplicate `case` labels. If it did, the compiler would not know which jump target to choose when the evaluated expression matches that value.
+
+> Takeaway 3.3 #3: _case labels must not jump beyond a variable definition._
+
+**Explanation:** Because a `switch` is fundamentally a jump, jumping past a variable declaration that involves initialization (e.g., `case 1: int x = 5; case 2: printf("%d", x);`) means the variable enters scope, but its initialization is bypassed. This leads to undefined behavior or compile-time errors. In C23, avoiding this requires enclosing `case` specific variables in their own compound blocks `{}`.
+
+**Pitfalls:**
+
+- **Fall-through:** Forgetting a `break;` statement causes the program to continue executing the code in the subsequent `case` blocks, regardless of whether their labels match. Sometimes this is intended, but often it is a severe bug.
+- **Missing semicolons prior to C23:** Prior to C23, labels couldn't exist without a trailing statement. If a `switch` case ended with an empty label (e.g., `case 0: }`), a dummy semicolon was required.
+
+**Connections:** The concept of `switch` labels acting as jump targets prepares the reader for Chapter 19's detailed look at the `goto` statement, as both fundamentally rely on labeling points in the codebase.
+
+#### Code Demonstration: Multiple selection
 
 ```c
 #include <stdio.h>
+#include <stdlib.h>
 
-void demo_multiple_selection(char corvid_code) {
-    // Controlling expression 'corvid_code' is evaluated once at entry
-    switch (corvid_code) {
-        // Takeaway 3.3 #1: 'm', 'r', 'j', 'c' are character constants (integer values)
-        // Takeaway 3.3 #2: Each case value is unique
-        case 'm':
-            puts("Selected: Magpie");
-            break; // Prevents fall-through, exiting the switch
+int main(void) {
+    char arg = 'j';
+    int count = 3;
 
+    // Demonstrating standard switch usage
+    printf("Evaluating Corvid:\n");
+    switch (arg) {
+        case 'm': // Takeaway 3.3 #1: Character literals are integer constants
+            puts("this is a magpie");
+            break;
         case 'r':
-            puts("Selected: Raven");
+            puts("this is a raven");
             break;
-
         case 'j':
-        case 'J': // Intentional grouping: both 'j' and 'J' fall through to the same action
-            puts("Selected: Jay");
+            puts("this is a jay");
+            break; // Jumps out of switch here
+        case 'c':
+            puts("this is a chough");
             break;
-
-        case 'c': {
-            // Takeaway 3.3 #3: Enclose block in braces {} when defining local variables 
-            // to ensure case labels do not jump over variable initializations!
-            int chough_id = 42; 
-            printf("Selected: Chough (ID: %d)\n", chough_id);
-            break;
-        }
-
         default:
-            puts("Selected: Unknown corvid bird");
-            break;
+            puts("this is an unknown corvid");
+            // No break needed at the end, but good practice
     }
+
+    // Demonstrating intentional fall-through and Takeaway 3.3 #3 (scoping constraint)
+    printf("\nTriangle Drawing:\n");
+    switch (count) {
+        default: puts("++++"); // Fall-through intentional
+        case 3:  puts("+++");
+        case 2:  puts("++");
+        case 1:  puts("+");
+        case 0:
+            // In C23, this is fine. Prior to C23, this would need a `;` to not be an empty label.
+    }
+
+    return EXIT_SUCCESS;
 }
 ```
 
-### Summary Table of Control Constructs in C
+_Expected behavior/output:_ The first `switch` outputs "this is a jay". The second `switch`, due to intentional fall-through (no `break` statements), jumps to `case 3:` and outputs `+++`, `++`, `+`.
 
-| Construct | Type | Evaluation Timing | Best Used For |
-| :--- | :--- | :--- | :--- |
-| **`if` / `if-else`** | Selection | Evaluated before entering branch | Binary decision paths based on scalar conditions |
-| **`for`** | Iteration | Pre-tested before each loop pass | Counting/bounded domain iterations with defined loop variables |
-| **`while`** | Iteration | Pre-tested before each loop pass | Loops running 0 or more times based on a state condition |
-| **`do-while`** | Iteration | Post-tested after each loop pass | Loops that must execute at least once (e.g., user input/convergence) |
-| **`switch`** | Selection | Evaluated once at entry | Multi-way branching based on fixed integer/character constant values |
+_What goes wrong if..._ If you write `case var:` where `var` is a variable, the code will fail to compile (violating Takeaway 3.3 #1). If you forget the `break` under `case 'j'`, it would print "this is a jay" _and_ "this is a chough".
+
+**Recap: Multiple selection**
+
+- `switch` statements evaluate an integer expression and jump to a matching `case` label.
+- Labels must be unique integer constants.
+- `break` is necessary to prevent execution from "falling through" into subsequent cases.
+
+---
+
+## Summary
+
+Chapter 3 lays out the foundational constructs for directing program execution in C. Through conditional statements (`if`), iterative structures (`for`, `while`, `do-while`), and multiple selection jumps (`switch`), the programmer can implement complex abstract state machines. Crucially, C leans on mathematical simplicity: `0` is strictly logical false, and any non-zero scalar equates to logical true. Understanding that control constructs like `switch` and `for` rely on simple internal jumps and truth evaluations helps avoid common pitfalls, such as infinite loops, accidental fall-throughs, or redundant Boolean comparisons, resulting in cleaner, idiomatic C code.
+
+---
+
+## Self-Check Questions
+
+1.  **What numeric value represents "false" in a C condition?**
+    The value `0`.
+
+2.  **How are non-zero scalar values interpreted in an `if` condition?**
+    Any value different from `0` is treated as logical `true`.
+
+3.  **Why is it considered bad style to write `if (pointer != 0)` or `if (flag == true)`?**
+    Because all scalars have an inherent truth value; writing `if (pointer)` or `if (flag)` is more concise, readable, and avoids redundancy.
+
+4.  **What are the three parts of a `for` loop header?**
+    1. Variable declaration/initialization.
+    2. Loop condition check.
+    3. Update expression.
+
+5.  **What is the difference between a `while` loop and a `do-while` loop?**
+    `while` checks its condition _before_ the first execution, while `do-while` executes its block once _before_ checking the condition.
+
+6.  **What happens when a `break` statement is encountered inside a loop?**
+    Execution immediately exits the loop, bypassing any remaining statements in the block and ignoring the loop condition.
+
+7.  **What is the role of a `continue` statement inside a `for` loop?**
+    It skips the rest of the current iteration's block and jumps straight to the loop's update expression, then re-evaluates the condition.
+
+8.  **Can you use a string literal like `"test"` as a `case` value in a `switch` statement?**
+    No, `case` values must be integer constant expressions (like `1` or `'a'`).
+
+9.  **What is "fall-through" in a `switch` statement?**
+    When a `case` block does not end with a `break;`, execution continues straight into the code of the next `case` label.
+
+10. **Why must you be careful defining variables inside `switch` cases?**
+    Because a `case` is a jump target; if you jump past the definition and initialization of a local variable to another case, that variable will be uninitialized, leading to undefined behavior.
