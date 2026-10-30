@@ -11,9 +11,7 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-# Chapter 16. Performance
-
-## Introduction to Performance Optimization in C23
+## Chapter 16. Performance
 
 ### The Philosophy of C Optimization
 
