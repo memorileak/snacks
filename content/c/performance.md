@@ -4,284 +4,395 @@ description = "A guide to safe C23 optimization, covering compiler assistance, i
 date = 2026-09-28T07:02:58Z
 
 [taxonomies]
-tags = ["modernc"]
+tags = ["modernc", "performance"]
 
 [extra]
 math = true
 # cover.image = "images/cover.png"
 +++
 
-In **Chapter 16: Performance** of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, the book opens **Level 3: Experience**. While C is widely chosen for its high-performance capabilities, Gustedt stresses that performance optimizations must never compromise safety, correctness, or maintainability.
+# Chapter 16. Performance
 
-Below is a detailed breakdown of the fundamental concepts, compiler optimization mechanisms, design constraints, and statistical measurement rules covered in Chapter 16 across its four core sections:
+## Introduction to Performance Optimization in C23
 
+### The Philosophy of C Optimization
 
-### 1. Prime Directives of Optimization & General Rules (Section 16)
-Before applying specific compiler keywords or attributes, developers must follow fundamental rules to prevent trading software reliability for marginal execution gains.
+**What it is:** In C, optimizing code for performance often relies on the programmer communicating specific properties of the code to the compiler. This is achieved through language features like `register`, `inline`, `restrict`, `alignas`, `[[unsequenced]]`, and `[[reproducible]]`.
 
-* **Premature Optimization:**
-  * **Takeaway 16 #1:** ***Premature optimization is the root of all evil*** (quoting Donald Knuth).
-* **Safety vs. Performance:**
-  * **Takeaway 16 #2:** ***Do not trade safety for performance***. Sacrificing safety checks introduces severe bugs—such as out-of-bounds array access, uninitialized memory reads, stale pointer dereferences, or signed integer overflow—which lead to data loss, security vulnerabilities, or crashes.
-* **Compiler Assistance & Aliasing:**
-  * **Takeaway 16 #3:** ***Optimizers are clever enough to eliminate unused initializations***.
-  * **Takeaway 16 #4:** ***The different notations of pointer arguments to functions result in the same binary code***. Parameter annotations like `double a[static 1]`, `double a[static N]`, or VLA parameter notation pass identical information to the optimizer without altering machine code output.
-  * **Takeaway 16 #5:** ***Not taking addresses of local variables helps the optimizer because it inhibits aliasing***. When a local variable's address is never retrieved with `&`, the compiler guarantees it cannot alias with other pointers, enabling it to cache the value directly inside CPU registers.
+**Why it matters / how it works:** These features are unique because they constrain the _programmer_, not the compiler. By applying these constraints (e.g., promising that a pointer has exclusive access to memory), the compiler can safely assume certain properties and generate faster, more aggressive machine code. The defining characteristic of these features is that removing them from a valid program will _not_ change its semantics; they purely serve as optimization hints.
 
-#### Example
+**Key details:**
 
-Before applying specific compiler keywords, optimization must respect software safety. Compiler optimizers are sophisticated enough to eliminate unused initializations, and avoid taking addresses of local variables (`&`) so the compiler can store them directly in CPU registers without aliasing concerns.
+- `register` (C89): Helps avoid aliasing among local variables.
+- `inline` (C99), `restrict` (C99): Optimize function calls and pointer aliasing.
+- `alignas` (C11): Improves cache line memory access.
+- `[[unsequenced]]`, `[[reproducible]]` (C23): Enable aggressive optimization for pure functions.
+
+**Recap:**
+
+- Optimization keywords in C constrain the programmer to guarantee certain behaviors.
+- These features do not alter the semantic correctness of the code, only its performance.
+
+---
+
+## 16.1. Inline functions
+
+### Modular Functions and The Overhead Problem
+
+**What it is:** C programs use functions to modularize code, separating interface from implementation and encapsulating local state. However, small modular functions introduce execution overhead (e.g., passing arguments, saving registers, jumping execution).
+
+**Why it matters / how it works:** While small functions improve readability, the compiler might struggle to optimize them if they are defined in separate Translation Units (TUs). The `inline` keyword acts as a hint that a function is a good candidate for **inlining**—replacing the function call directly with the function's body at the call site.
+
+> Takeaway 16.1 #1 _Inlining can open up a lot of optimization opportunities._
+
+When a function is inlined, the compiler can perform inter-procedural optimizations, treating the function's code as if it were written directly inside the caller.
+
+### The Mechanics of the `inline` Keyword
+
+**What it is:** The `inline` keyword allows the same function _definition_ to be present in multiple TUs (usually via a header file) without violating the One Definition Rule (ODR) or causing multiple-symbol-definition errors during linking.
+
+**Why it matters / how it works:** `inline` does _not_ force the compiler to inline the function; it only makes it legally possible by making the definition visible everywhere.
+
+> Takeaway 16.1 #2 _Adding a compatible declaration without the inline keyword ensures the emission of the function symbol in the current TU._
+
+> Takeaway 16.1 #3 _An inline function definition is visible in all TUs._
+
+> Takeaway 16.1 #4 _An inline definition goes in a header file._
+
+> Takeaway 16.1 #5 _An additional declaration without inline goes in exactly one TU._
+
+**Key details & Rules:**
+
+- If a function is marked `inline` in a header file, the compiler might inline it. But if it decides _not_ to inline it, it needs a real symbol to call.
+- To provide this real symbol, you must declare the function _without_ the `inline` keyword in exactly _one_ `.c` file.
+- Pointers to the same `inline` function will always compare equal, even if the object code resides in different places, because the linker unifies the address to the emitted symbol.
+
+### Code Demonstration: `inline` Mechanics
+
+```c
+// --- toto.h ---
+#ifndef TOTO_H
+#define TOTO_H
+
+typedef struct { int value; } toto;
+
+// Takeaway 16.1 #4: Inline definition goes in a header.
+// Visible to all TUs that include toto.h (Takeaway 16.1 #3)
+inline toto* toto_init(toto* toto_x) {
+    if (toto_x) {
+        *toto_x = (toto){ 0 }; // Initialize to 0
+    }
+    return toto_x;
+}
+#endif
+
+// --- toto.c ---
+#include "toto.h"
+
+// Takeaway 16.1 #2 and #5: Emitting the symbol.
+// Instantiate in exactly one TU by providing a declaration without 'inline'.
+toto* toto_init(toto*);
+
+// --- main.c ---
+#include "toto.h"
+#include <stdio.h>
+
+int main(void) {
+    toto t;
+    toto_init(&t); // Compiler may inline this directly.
+    printf("Value: %d\n", t.value);
+    return 0;
+}
+
+```
+
+_Expected Behavior:_ The code compiles and prints `Value: 0`. If `toto_init` is called via a function pointer, the linker resolves it to the symbol emitted in `toto.c`.
+
+_What goes wrong:_ If you omit the declaration in `toto.c` and the compiler decides _not_ to inline the call in `main.c`, the linker will fail with an "undefined reference" error.
+
+### Pitfalls and Constraints of `inline`
+
+**What it is:** Because `inline` functions exist in a weird state (defined in headers, visible across TUs), they face strict rules regarding their internal variables and identifiers.
+
+> Takeaway 16.1 #6 _Only expose functions as inline if you consider them stable._
+
+> Takeaway 16.1 #7 _All identifiers local to an inline function should be protected by a convenient naming convention._
+
+> Takeaway 16.1 #8 _inline functions can’t access static functions by name._
+
+> Takeaway 16.1 #9 _inline functions can’t access modifiable static objects by name._
+
+> Takeaway 16.1 #A _inline functions can’t define modifiable static objects._
+
+**Why it matters:**
+
+- **Stability:** Once in a header, changing an `inline` function requires recompiling every TU that includes it.
+- **Static Access:** An `inline` function doesn't belong to a single TU. If it were allowed to access a `static` variable by name, which `static` variable would it mean? The one in `foo.c` or `bar.c`? To prevent this ambiguity, the standard forbids it. (However, passing a pointer to a `static` object into the function is perfectly fine).
+
+**Recap:**
+
+- `inline` provides definitions in headers to allow compiler optimizations.
+- Must be instantiated in exactly one TU to guarantee a linker symbol.
+- Cannot interact with `static` (TU-local) functions or modifiable `static` objects by name.
+
+---
+
+## 16.2. Using restrict qualifiers
+
+### Exclusive Pointer Access
+
+**What it is:** `restrict` is a type qualifier for pointers (introduced in C99). It asserts to the compiler that for the lifetime of the pointer, the object it points to is accessed _exclusively_ through that pointer (or pointers derived from it).
+
+**Why it matters / how it works:** One of the biggest roadblocks to compiler optimization is **aliasing** (two pointers pointing to the same memory). If a compiler sees a write to pointer A and a read from pointer B, it must assume they might point to the same location, forcing it to reload data from memory instead of keeping it in registers. `restrict` breaks this assumption, granting the compiler freedom to optimize.
+
+> Takeaway 16.2 #1 _A restrict-qualified pointer has to provide exclusive access._
+
+> Takeaway 16.2 #2 _A restrict-qualification constrains the caller of a function._
+
+**Key details:**
+
+- It places the burden of correctness entirely on the programmer (the caller).
+- Standard library functions frequently use it (e.g., `memcpy` vs. `memmove`). `memcpy` uses `restrict` and expects no overlap. `memmove` omits `restrict` and safely handles overlap (at the cost of performance).
+- Functions like `printf` use `restrict` on their format strings and stream pointers to guarantee they don't alias other arguments.
+
+### Code Demonstration: `restrict` Aliasing
 
 ```c
 #include <stdio.h>
-#include <stddef.h>
+#include <string.h>
 
-// Takeaway 16 #4: Annotating pointer parameters using array/static/VLA syntax
-// communicates accessibility guarantees to the compiler without altering binary code.
-
-// 1. Single non-null object guarantee (static 1):
-void process_single(double v[static 1]) { //
-  *v *= 2.0;
-}
-
-// 2. Fixed collection with minimum element count guarantee (static N):
-void process_fixed(double v[static 8]) { //
-  for (size_t i = 0; i < 8; ++i) {
-    v[i] += 1.0;
-  }
-}
-
-// 3. Dynamic VLA parameter with guaranteed accessible bound:
-void process_vla(size_t n, double v[static n]) { //
-  for (size_t i = 0; i < n; ++i) {
-    v[i] *= 0.5;
-  }
-}
-
-void demo_general_rules(void) {
-  // Takeaway 16 #3: Optimizers eliminate unused initializations automatically.
-  double value = 0.0; // Safe initialization; compiler eliminates dead store if overwritten
-  value = 42.0;
-
-  // Takeaway 16 #5: Avoid taking the address (&) of local variables when unneeded.
-  // By NOT calling &value, the compiler guarantees 'value' cannot be aliased by pointers,
-  // allowing it to cache 'value' inside a hardware CPU register.
-  process_single(&value);
-
-  double dataset = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
-  process_fixed(dataset);
-  process_vla(8, dataset);
-}
-```
-
-### 2. Inline Functions (Section 16.1)
-Modular code relies on functions, but function calls incur runtime overhead (stack frame allocation, register saving, context jumps, and struct copying). Inlining replaces the function call with its body directly at the call site.
-
-* **Optimization Opportunities:**
-  * **Takeaway 16.1 #1:** ***Inlining can open up a lot of optimization opportunities***. Exposing the function body to the caller's context allows the compiler to perform constant folding, dead-branch elimination, and register-level optimizations across function boundaries.
-* **C99/C23 `inline` Rules & Linkage:**
-  * **Takeaway 16.1 #3 & #4:** ***An `inline` function definition goes in a header file***, and ***is visible in all translation units (TUs)***.
-  * **Takeaway 16.1 #2 & #5:** ***An additional compatible declaration without `inline` goes in exactly one TU***. This guarantees that a non-inlined external function symbol is emitted in that single translation unit if the compiler chooses not to inline a call.
-  * **Takeaway 16.1 #6:** ***Only expose functions as `inline` if you consider them stable***. Modifying an inline header definition forces a full recompilation of all dependent source files.
-  * **Takeaway 16.1 #7:** ***All identifiers local to an `inline` function should be protected by a convenient naming convention*** (such as a unique project prefix) to avoid accidental expansion by user macros.
-* **Restrictions on `inline` Functions:**
-  * **Takeaway 16.1 #8:** ***`inline` functions can’t access `static` functions by name***.
-  * **Takeaway 16.1 #9:** ***`inline` functions can’t access modifiable `static` objects by name***.
-  * **Takeaway 16.1 #A:** ***`inline` functions can’t define modifiable `static` objects***. (Because an `inline` definition is included across multiple TUs, binding static names would create ambiguous static instances).
-
-#### Example
-
-Inlining replaces function calls directly at the call site, eliminating call overhead and unlocking optimizations like dead-branch elimination and constant folding. C99/C23 specifies exact header and translation unit (TU) linkage rules for `inline` functions.
-
-**Header File (`myproj_math.h`)**
-
-```c
-#ifndef MYPROJ_MATH_H
-#define MYPROJ_MATH_H
-
-#include <stddef.h>
-
-// Takeaway 16.1 #3 & #4: An inline definition goes in a header file and is visible to all TUs.
-// Takeaway 16.1 #7: Protect all local parameters and variables with a project prefix (myproj_)
-// to avoid accidental expansion by user preprocessor macros.
-inline size_t myproj_square(size_t myproj_x) {
-    // Takeaway 16.1 #8, #9, & #A: Inline functions CANNOT access static functions or modifiable
-    // static objects by name, nor can they define modifiable static objects.
-    return myproj_x * myproj_x;
-}
-
-#endif // MYPROJ_MATH_H
-```
-
-**Translation Unit (`myproj_math.c`)**
-
-```c
-#include "myproj_math.h"
-
-// Takeaway 16.1 #2 & #5: Adding a compatible declaration WITHOUT the 'inline' keyword
-// in exactly ONE translation unit forces the compiler to emit a non-inlined external
-// function symbol (e.g. if the caller takes a pointer to the function or inlining is disabled).
-size_t myproj_square(size_t); // Emits global symbol for myproj_square
-```
-
-### 3. Exclusive Pointer Access via `restrict` (Section 16.2)
-The `restrict` type qualifier informs the compiler that a pointer is the **sole initial reference** to its target object within its scope.
-
-* **Exclusive Access:**
-  * **Takeaway 16.2 #1:** ***A `restrict`-qualified pointer has to provide exclusive access***. It promises that no other pointer within the same execution block will be used to access or modify the underlying memory region.
-* **Caller Constraints:**
-  * **Takeaway 16.2 #2:** ***A `restrict`-qualification constrains the caller of a function***. The burden of proof rests on the caller to guarantee that memory buffers passed to `restrict` parameters (e.g., `memcpy`) do not overlap.
-
-#### Example
-
-The `restrict` qualifier asserts that a pointer provides exclusive access to its target memory block during the execution of its scope. This informs the optimizer that no other pointer will read or modify the same underlying memory, placing the burden of non-overlapping buffer guarantees on the caller.
-
-```c
-#include <stdio.h>
-#include <stddef.h>
-
-// Takeaway 16.2 #1 & #2: 'restrict' promises that 'out' and 'in' point to non-overlapping
-// memory regions, allowing vectorization and register caching.
-void vector_add(size_t len,
-                double* restrict out,
-                double const* restrict in1,
-                double const* restrict in2) {
-    for (size_t i = 0; i < len; ++i) {
-        // Because of 'restrict', the compiler knows writes to out[i]
-        // can never modify in1[j] or in2[j].
-        out[i] = in1[i] + in2[i];
+// Both pointers are restricted. The caller promises arrays don't overlap.
+void add_arrays(size_t n, int restrict out[n], const int restrict in[n]) {
+    for (size_t i = 0; i < n; ++i) {
+        // Compiler can optimize this loop heavily (e.g., using SIMD instructions)
+        // because it knows writing to 'out' won't secretly change 'in'.
+        out[i] += in[i];
     }
 }
 
-void demo_restrict(void) {
-    double a = {1.0, 2.0, 3.0, 4.0};
-    double b = {10.0, 20.0, 30.0, 40.0};
-    double result = {};
+int main(void) {
+    int A[5] = {1, 2, 3, 4, 5};
+    int B[5] = {10, 20, 30, 40, 50};
 
-    // Caller guarantee: 'result', 'a', and 'b' refer to distinct, non-overlapping memory blocks.
-    vector_add(4, result, a, b);
+    // Valid use: A and B do not overlap.
+    add_arrays(5, A, B);
+
+    // INVALID USE (Restrict Violation):
+    // add_arrays(4, A+1, A); // The ranges overlap! Undefined behavior.
+
+    // Standard Library violation example (conceptual):
+    char const* format = "First two bytes in stdin object: %.2s\n";
+    // fprintf(stdin, format, (char*)stdin); // Restrict violation! Stream and arg alias.
+
+    return 0;
 }
+
 ```
 
-### 4. C23 Optimization Attributes (`[[unsequenced]]` & `[[reproducible]]`) (Section 16.3)
-C23 standardizes function attributes that explicitly inform the compiler about a function's purity, side effects, and state dependencies.
+_Expected Behavior:_ Arrays are added efficiently.
 
-* **`[[unsequenced]]` (Pure Functions):**
-  * **Takeaway 16.3 #1:** ***All pure functions should have the attribute `[[unsequenced]]`***.
-  * **Takeaway 16.3 #2 & #4:** ***A function with the attribute `[[unsequenced]]` shall not read nonconstant global variables or system state***, and ***shall not apply visible modifications to global variables or system states***.
-  * **Takeaway 16.3 #3 & #5:** ***Functions using floating-point arithmetic or returning errors through `errno` are generally not pure and shall not have `[[unsequenced]]`*** (because floating-point control modes, rounding flags, and `errno` are mutable global/thread states).
-  * **Takeaway 16.3 #A:** ***A function with `[[unsequenced]]` shall not modify local `static` state, even through other function calls***.
-* **Local Pragmas & FP State Guarantees:**
-  * **Takeaway 16.3 #6 & #7:** ***Pragmas changing floating-point state act locally within current scope***, and ***type attributes accumulate within current scope***. Scoping pragmas like `#pragma FP_CONTRACT OFF` and `#pragma FENV_ROUND FE_TONEAREST` locally isolates FP state, allowing functions like `sqrt` to be safely attributed as `[[unsequenced]]` in local scopes.
-* **`[[reproducible]]` (Weaker Purity):**
-  * **Takeaway 16.3 #8 & #B:** ***A function with `[[reproducible]]` may temporarily modify global state as long as it restores it***, and ***may modify local `static` state if that state is not observable from outside***.
-  * **Takeaway 16.3 #9:** ***For functions with `[[unsequenced]]` and `[[reproducible]]` attributes, annotate pointer parameters with `restrict`***.
+_What goes wrong:_ Passing overlapping arrays to a `restrict` qualified function leads to Undefined Behavior. The compiler might generate SIMD instructions that fetch and write in chunks, corrupting the data if they overlap.
 
-#### Example
+**Recap:**
 
-C23 introduces standard attributes to annotate function purity and state dependency.
+- `restrict` promises the compiler that a pointer is the sole access path to memory.
+- It enables aggressive loop and memory optimizations.
+- Violating this promise (aliasing `restrict` pointers) causes undefined behavior.
 
-* **`[[unsequenced]]`**: Annotates pure functions that do not read or modify global/system state (including `errno`) and depend strictly on input value parameters.
-* **`[[reproducible]]`**: Weaker purity attribute allowing temporary modification of global state (if restored before returning) or unobservable cached/memoized state.
+---
+
+## 16.3. Unsequenced and reproducible attributes
+
+### Pure Functions (`[[unsequenced]]`)
+
+**What it is:** C23 introduced the standard attributes `[[unsequenced]]` and `[[reproducible]]`. `[[unsequenced]]` is used to denote **pure functions**—functions whose return value depends _only_ on their parameters and have absolutely no side effects.
+
+**Why it matters / how it works:** If a function is pure, the compiler can cache its result, reorder its execution, or eliminate the call entirely if the result isn't used.
+
+> Takeaway 16.3 #1 _All pure functions should have the attribute [[unsequenced]]._
+
+> Takeaway 16.3 #2 _A function with the attribute [[unsequenced]] shall not read nonconstant global variables or system state._
+
+> Takeaway 16.3 #4 _A function with the attribute [[unsequenced]] shall not apply visible modifications to global variables or system states._
+
+> Takeaway 16.3 #A _A function with the attribute [[unsequenced]] shall not modify the local static state, even through other function calls._
+
+**Key details & Pitfalls:**
+
+- You cannot read `errno`. (Takeaway 16.3 #5: _A function that returns possible errors through errno is not pure and shall not have the attribute [[unsequenced]]._)
+- Floating-point math interacts with the global FPU state (rounding modes, exceptions). Therefore, general floating-point math ruins purity. (Takeaway 16.3 #3: _In general, a function that uses floating point arithmetic is not pure and shall not have the attribute [[unsequenced]]._)
+- _Pragmas:_ You can locally alter FPU state. (Takeaway 16.3 #6: _Pragmas that change the floating point state act locally within the current scope._ / Takeaway 16.3 #7: _Type attributes accumulate within the current scope._)
+
+### Caching and State (`[[reproducible]]`)
+
+**What it is:** `[[reproducible]]` is a slightly weaker attribute than `[[unsequenced]]`. It means the function always produces the same output for the same input and has no _observable_ side effects from the outside, but it _might_ have internal side effects (like modifying a static cache/hash table).
+
+> Takeaway 16.3 #8 _A function with the attribute [[reproducible]] may temporarily modify the global state as long as it restores it to its original value._
+
+> Takeaway 16.3 #B _A function with the attribute [[reproducible]] shall only modify the local static state if that state is not observable from outside the function._
+
+**Interaction with Pointers:**
+Functions with pointer parameters can still be pure/reproducible if they only read/write to the memory strictly provided via the pointers, acting like a mapping operation.
+
+> Takeaway 16.3 #9 _For functions with [[unsequenced]] and [[reproducible]] attribute annotate pointer parameters with restrict._
+
+### Code Demonstration: Attributes
 
 ```c
-#include <stdio.h>
-#include <math.h>
-#include <fenv.h>
+#include <stddef.h>
 
-// Takeaway 16.3 #1: Pure value functions should be annotated with [[unsequenced]].
-[[unsequenced]] inline double cube_value(double x) { //
-  return x * x * x;
+// Pure function: Output only depends on input, no global state touched.
+// Pointer is marked restrict as required by Takeaway 16.3 #9.
+int compute_hash(char const restrict str[static 1]) [[unsequenced]] {
+    int hash = 5381;
+    while (*str) {
+        hash = ((hash << 5) + hash) + *str++;
+    }
+    return hash;
 }
 
-// Takeaway 16.3 #3, #5, #6, & #7: Floating-point arithmetic and errno checks generally prevent
-// global unsequenced attribution. However, local pragmas (#pragma FP_CONTRACT / FENV_ROUND)
-// and local scope attributes allow functions to be locally optimized.
-[[reproducible]] inline double compute_distance(double const x[restrict static 2]) { //
-  #pragma FP_CONTRACT OFF
-  #pragma FENV_ROUND FE_TONEAREST //
+// Reproducible function: Has hidden internal static state (caching),
+// but from the caller's perspective, it has no side effects and always
+// returns the same result for the same input.
+size_t expensive_hash(char const restrict str[static 1]) [[reproducible]] {
+    static char const* cached_str = NULL;
+    static size_t cached_hash = 0;
 
-  // Locally assert that sqrt will not encounter negative numbers or set errno
-  extern double sqrt(double) [[unsequenced]]; // Local attribute scoping
-  return sqrt(x * x + x * x); //
+    if (str == cached_str) {
+        return cached_hash; // Internal state read
+    }
+
+    cached_str = str; // Internal state write (not observable outside)
+    cached_hash = compute_hash(str);
+    return cached_hash;
 }
 
-// Takeaway 16.3 #8 & #B: [[reproducible]] allows unobservable internal static state (such as a lookup table).
-[[reproducible]] size_t cached_lookup(size_t key) { //
-  static size_t cache = {}; // Internal static cache not observable from caller
-  if (cache[key % 256] != 0) {
-    return cache[key % 256];
-  }
-  size_t computed = key * 31U + 7U;
-  cache[key % 256] = computed;
-  return cache[key % 256];
-}
 ```
 
-### 5. Rigorous Performance Measurement & Statistics (Section 16.4)
-Human intuition is notoriously unreliable at predicting code performance under modern compiler optimizations and CPU hardware architectures.
+_Expected Behavior:_ The compiler is free to eliminate redundant calls to `compute_hash` or `expensive_hash` if called multiple times with the same pointer in a loop.
 
-* **Verification over Speculation:**
-  * **Takeaway 16.4 #1:** ***Don’t speculate about the performance of code; verify it rigorously***.
-  * **Takeaway 16.4 #2 & #3:** ***Complexity assessment of algorithms requires proofs***, whereas ***performance assessment of code requires measurement***.
-* **Measurement Bias & Instrumentation:**
-  * **Takeaway 16.4 #4 & #5:** ***All measurements introduce bias***, and ***instrumentation changes compile-time and run-time properties***. Inserting timing calls (such as `timespec_get`) forces compilers to save registers, emit system calls, and invalidate cache assumptions.
-* **Statistical Hardening:**
-  * **Takeaway 16.4 #6:** ***The relative standard deviation (\\(\sigma / \mu\\)) of run times must be in a low percentage range*** to be considered statistically valid.
-  * **Takeaway 16.4 #7:** ***Collecting higher-order moments of measurements to compute variance and skew is simple and cheap*** (using incremental statistical algorithms like Welford's or Pébay's).
-  * **Takeaway 16.4 #8:** ***Run-time measurements must be hardened with statistics***.
+**Recap:**
 
-#### Example
+- `[[unsequenced]]` guarantees absolute mathematical purity (no side effects, no global state reads).
+- `[[reproducible]]` allows hidden internal state changes (like caching or temporarily changing floating-point modes) as long as it isn't externally observable.
+- Pointers passed to these functions must be `restrict` qualified.
 
-Performance assessment requires actual runtime measurement rather than speculation. However, inserting instrumentation (like `timespec_get`) introduces bias and alters compiler register allocations. Measurements must be hardened using statistical moments (mean and low relative standard deviation).
+---
+
+## 16.4. Measurement and inspection
+
+### The Science of Profiling
+
+**What it is:** Performance assessment is an empirical science. Humans are bad at guessing where code spends its time, so optimization must be driven by rigorous measurement.
+
+**Why it matters / how it works:** Without measurement, programmers fall into the trap of "premature optimization," making code complex without actual speed gains.
+
+> Takeaway 16.4 #1 _Don’t speculate about the performance of code; verify it rigorously._
+
+> Takeaway 16.4 #2 _Complexity assessment of algorithms requires proofs._
+
+> Takeaway 16.4 #3 _Performance assessment of code requires measurement._
+
+### The Observer Effect in Code
+
+**What it is:** The act of measuring code alters the code's behavior. Functions like `timespec_get` take time to execute, require system calls, force the compiler to save registers, and can invalidate CPU caches.
+
+> Takeaway 16.4 #4 _All measurements introduce bias._
+
+> Takeaway 16.4 #5 _Instrumentation changes compile-time and run-time properties._
+
+**Key details:**
+
+- **Optimizer Interference:** If you write an empty `for` loop to establish a baseline measurement, an optimizing compiler will delete the loop entirely because it has no side effects.
+- **The Volatile Trick:** To force the compiler to execute a loop for benchmarking without doing real work, you must use `volatile` variables. `volatile` tells the compiler that the variable may change outside the program's control, forcing it to emit real load/store instructions.
+
+### Hardening with Statistics
+
+**What it is:** Because OS scheduling, interrupts, and caches cause run-time variability, a single measurement is meaningless. You must repeat experiments and use statistics (mean, variance, standard deviation).
+
+> Takeaway 16.4 #6 _The relative standard deviation of run times must be in a low percentage range._
+
+> Takeaway 16.4 #7 _Collecting higher-order moments of measurements to compute variance and skew is simple and cheap._
+
+> Takeaway 16.4 #8 _Run-time measurements must be hardened with statistics._
+
+### Code Demonstration: Benchmarking Bias and Loops
 
 ```c
-#include <stdio.h>
 #include <time.h>
 #include <stdint.h>
+#include <stdio.h>
 
-// Structure to accumulate raw statistical moments (0th to 2nd moment)
-typedef struct {
-  double count;
-  double mean;
-  double M2; // Running sum of squared differences (Welford's algorithm)
-} benchmark_stats;
+int main(void) {
+    struct timespec t_start, t_end;
+    uint64_t iterations = 100000000;
 
-// Takeaway 16.4 #7: Collecting statistical moments to compute variance is simple and cheap.
-[[reproducible]] inline void stats_accumulate(benchmark_stats* s, double val) { //
-  s->count += 1.0;
-  double delta = val - s->mean;
-  s->mean += delta / s->count;
-  double delta2 = val - s->mean;
-  s->M2 += delta * delta2;
-}
-
-void demo_measurement_statistics(void) {
-  struct timespec start = {}, end = {};
-  benchmark_stats timing_stats = {};
-  uint64_t iterations = 10000;
-
-  // Takeaway 16.4 #4 & #5: Time measurements introduce bias and alter compile-time properties.
-  // Repeated execution inside loops minimizes single-call bias.
-  for (size_t run = 0; run < 10; ++run) {
-    timespec_get(&start, TIME_UTC); //
-
-    // Volatile store ensures loop body is executed without being optimized away
-    for (uint64_t volatile i = 0; i < iterations; ++i) { //
-      /* Code under test */
+    // Measurement 1: Empty loop (Compiler might delete this entirely!)
+    timespec_get(&t_start, TIME_UTC);
+    for (uint64_t i = 0; i < iterations; ++i) {
+        /* do nothing */
     }
+    timespec_get(&t_end, TIME_UTC);
+    printf("Empty loop time (likely 0 due to optimization)\n");
 
-    timespec_get(&end, TIME_UTC); //
+    // Measurement 2: Volatile loop (Compiler forced to emit instructions)
+    timespec_get(&t_start, TIME_UTC);
+    for (uint64_t volatile i = 0; i < iterations; ++i) {
+        /* volatile forces loop execution */
+    }
+    timespec_get(&t_end, TIME_UTC);
+    // Real time taken by loop logic overhead is recorded here.
+    printf("Volatile loop measured successfully.\n");
 
-    double elapsed_sec = (double)(end.tv_sec - start.tv_sec) +
-              (double)(end.tv_nsec - start.tv_nsec) * 1e-9;
-
-    stats_accumulate(&timing_stats, elapsed_sec / (double)iterations);
-  }
-
-  // Takeaway 16.4 #6 & #8: Run-time measurements must be hardened with statistics.
-  double variance = (timing_stats.count > 1.0) ? (timing_stats.M2 / (timing_stats.count - 1.0)) : 0.0;
-  printf("Mean time per iteration: %5.2e sec (Samples: %.0f, Variance: %5.2e)\n",
-       timing_stats.mean, timing_stats.count, variance);
+    return 0;
 }
+
 ```
+
+_Expected Behavior:_ The first loop will likely register as taking 0 nanoseconds on high optimization levels (`-O3`), while the second loop will record actual CPU cycles taken to increment and compare a variable in memory.
+
+**Recap:**
+
+- Never guess performance; prove algorithmic complexity and measure real times.
+- Beware of compiler optimizations (like loop deletion) ruining benchmarks.
+- Acknowledge instrumentation bias and use statistics (mean, standard deviation) over multiple runs to get accurate data.
+
+---
+
+## Summary
+
+Chapter 16 focuses on the tools C provides to bridge the gap between high-level code structure and low-level machine performance. By providing strict guarantees to the compiler using features like `inline` (for function expansion), `restrict` (for exclusive pointer access), and `[[unsequenced]]` / `[[reproducible]]` (for mathematical purity and caching), programmers can unlock aggressive optimizations like vectorization and dead-code elimination. However, these tools are double-edged swords; misusing them results in Undefined Behavior rather than compiler errors. Finally, any application of these optimizations must be verified using rigorous, statistically sound profiling methods, keeping in mind that the act of measuring code inherently alters its execution profile and limits the compiler's ability to optimize around the instrumentation.
+
+---
+
+## Self-Check Questions
+
+1. **Does placing the `inline` keyword on a function guarantee that the compiler will inline it?**
+   _Answer:_ No, it is only a hint and a mechanism to allow multiple definitions across TUs without linker errors.
+
+2. **Why must an `inline` function also have a declaration without the `inline` keyword in exactly one `.c` file?**
+   _Answer:_ To ensure that a concrete, callable symbol is emitted into the compiled binary in case the compiler chooses not to inline the function at a specific call site.
+
+3. **What happens if an `inline` function tries to modify a `static` variable defined outside of it?**
+   _Answer:_ It is invalid in C. Because the `inline` function is visible across multiple TUs, it is ambiguous which TU's local `static` state it would be modifying.
+
+4. **What is the core promise a programmer makes when using the `restrict` keyword?**
+   _Answer:_ They promise that the memory accessed through that pointer is accessed _exclusively_ through that pointer (or derived pointers) in that scope, meaning it does not alias with other pointers.
+
+5. **Why doesn't the standard library `memmove` function use the `restrict` keyword?**
+   _Answer:_ Because `memmove` is explicitly designed to handle overlapping memory regions safely, which fundamentally violates the exclusive access rule of `restrict`.
+
+6. **Can a function that prints to the console (`printf`) be marked with `[[unsequenced]]`?**
+   _Answer:_ No. Printing modifies global system state (I/O buffers, the terminal display), and `[[unsequenced]]` strictly forbids observable side effects.
+
+7. **What is the main difference between `[[unsequenced]]` and `[[reproducible]]`?**
+   _Answer:_ `[[unsequenced]]` forbids _all_ state modifications. `[[reproducible]]` allows internal, unobservable state modifications (like updating a `static` cache variable) as long as the function's external behavior remains deterministic.
+
+8. **Why must pointer parameters to `[[unsequenced]]` functions be marked as `restrict`?**
+   _Answer:_ To ensure the purity of the function is maintained, it must be guaranteed that the memory it reads from/writes to doesn't alias with other data causing unpredictable side effects.
+
+9. **What problem arises if you try to benchmark an empty `for` loop to establish a baseline time?**
+   _Answer:_ An optimizing compiler will realize the loop has no observable effect on the program and will completely delete the loop, making your baseline measurement 0.
+
+10. **How can you prevent the compiler from optimizing away a benchmarking loop?**
+    _Answer:_ By declaring the loop control variable, or an accumulator variable inside the loop, as `volatile`. This forces the compiler to execute the memory operations.
