@@ -362,6 +362,8 @@ Max: 10, a: 6
 
 Chapter 18 explores the mechanisms C provides for writing type-generic code. It begins with the inherent genericity of C's operators and the historical, type-unsafe methods using macros, variadic functions, and `void*` pointers. It then introduces modern, type-safe solutions: the `_Generic` keyword from C11 allows compile-time code selection based on types, while C23's `auto` and `typeof` features enable seamless type inference to prevent precision loss and repetition. Finally, it notes compiler extensions like anonymous functions (statement expressions) that bridge the gap between macros and safe, expression-oriented block execution, demonstrating a clear evolution toward robust, type-safe, generic programming in modern C.
 
+---
+
 ## Self-Check Questions
 
 1.  **Why do binary operators in C like `+` generally not require explicit type-generic programming?**

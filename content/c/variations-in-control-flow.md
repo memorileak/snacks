@@ -11,312 +11,513 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-In **Chapter 19: Variations in control flow** of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, the book explores how execution moves beyond simple sequential statement lists and basic block structures. It examines non-local jumps, signal handlers, evaluation order guarantees, and the interaction between unusual control flow and compiler optimizations.
+## 19. Variations in control flow
 
-Here is a detailed breakdown of the fundamental concepts, execution mechanisms, and key takeaways from Chapter 19 across its six core sections:
+### Overview of Control Flow Variations
 
+**What it is:** Control flow dictates the order in which individual statements in a C program are executed. While standard code executes sequentially or relies on structured conditionals and loops, exceptional situations require exceptional measures that drastically alter this flow.
 
-### 1. Basic Blocks & Control Flow Overview (Intro & Section 19.1)
-Normally, C program execution can be analyzed in terms of **basic blocks**—maximal sequences of statements executed unconditionally from first to last once entered. Structured programming organizes basic blocks hierarchically using conditionals (`if/else`, `switch/case`) and loops (`for`, `while`, `do`). However, exceptional conditions or external events require non-hierarchical control flow mechanisms:
+**Why it matters / how it works:** Understanding standard sequence execution (basic blocks) is the foundation of predicting a program's state. When this sequence is interrupted by features like `goto`, `longjmp`, signals, or threads, the abstract state machine becomes difficult to track.
 
-* **Language-level constructs:** Conditional statements, loops, function calls/returns, and short jumps (`goto`).
-* **Library-level mechanisms:** Long jumps across functions (`setjmp`/`longjmp`), signal interrupts (`signal`/`raise`), and concurrent thread execution (`thrd_create`/`thrd_exit`).
-* **State Risks:** Non-standard control flow can cause objects to be accessed outside their lifetime, used uninitialized, modified partially, or misinterpreted due to compiler optimization assumptions.
+**Key details:**
 
+- **Basic Block:** A maximal sequence of statements executed unconditionally from top to bottom.
+- **Language features:** Standard conditional statements (`if/else`, `switch/case`), loop statements (`do{}while()`, `while()`, `for()`), function calls, and short jumps (`goto`).
+- **C library interfaces:** Long jumps (`setjmp`/`longjmp`), interrupts (signal handlers), and threads (`thrd_create`).
 
-### 2. Sequencing & Sequence Points (Section 19.2)
-C code execution is formally structured around **sequence points** and **sequencing relations**. Code between sequence points may be reordered or interleaved by the compiler as long as observable side effects match the abstract machine.
+**Pitfalls:** Unexpected control flows can lead to objects being used outside their lifetimes, uninitialized objects, misinterpretations by optimizers, and race conditions (especially with unsequenced updates).
 
-#### Sequence Points Definition
-A sequence point is a synchronization barrier in execution. Major sequence points occur at:
-* The end of a statement (terminated by `;` or `}`).
-* The end of an expression before the comma operator `,`.
-* The end of a declaration.
-* The evaluation of controlling expressions in `if`, `switch`, `for`, `while`, `?:`, `&&`, and `||`.
-* Immediately after evaluating function designators and function arguments, before entering the function body.
-* The end of a `return` statement.
-* Specific library boundaries (e.g., format specifier actions in I/O, before library returns, and before/after comparison callbacks in `qsort`/`bsearch`).
+**Connections:** Links back to Chapter 2 (control flow basics) and forward to Chapter 20 (threads) and Chapter 21 (atomic data).
 
-#### Sequencing Rules & Indeterminate Evaluation
-* **Takeaway 19.2 #1:** ***Side effects in functions can lead to indeterminate results***. Function arguments are **indeterminately sequenced**—they are executed in some order, but calling functions with side effects as arguments (e.g., `printf("%u, %u\n", add(&a, &b), add(&b, &a))`) yields platform-dependent results.
-* **Takeaway 19.2 #2:** ***The specific operation of any operator is sequenced after the evaluation of all its operands***.
-* **Takeaway 19.2 #3:** ***The effect of updating an object with any of the assignment, increment, or decrement operators is sequenced after the evaluation of its operands***.
-* **Takeaway 19.2 #4:** ***A function call is sequenced with respect to all evaluations of the caller***.
-* **Takeaway 19.2 #5:** ***Initialization list expressions for array or structure types are indeterminately sequenced***.
+### Recap
 
-#### Example
+- Control flow can be simple (loops, conditionals) or complex (signals, jumps, threads).
+- Complexity increases as we move from language syntaxes to C library features.
+- Managing state consistency is the primary challenge in non-linear control flow.
 
-Execution between **sequence points** can be reordered or interleaved by the compiler. Function argument evaluations are **indeterminately sequenced**; if function calls produce side effects on shared variables, the outcome depends on the compiler's evaluation order.
+## 19.1. A detailed example
 
-* **Takeaway 19.2 #1:** *Side effects in functions can lead to indeterminate results*.
-* **Takeaway 19.2 #2 & #3:** *Operator actions and assignment/increment updates are sequenced after the evaluation of their operands*.
-* **Takeaway 19.2 #4:** *A function call is sequenced with respect to all evaluations of the caller*.
-* **Takeaway 19.2 #5:** *Initialization list expressions for array or structure types are indeterminately sequenced*.
+### The `descend` Function Case Study
+
+**What it is:** The chapter introduces a recursive descent parser (a function named `descend`) to parse basic blocks and code indentation.
+
+**Why it matters / how it works:** This 36-line example packs in multiple complex control flow variations: short jumps (`goto`), recursion, long jumps (`longjmp`), and asynchronous interrupt handling. It demonstrates how these constructs can be used in tandem to manage deeply nested state and handle critical failures without cascading return values.
+
+**Key details:**
+
+- Uses `goto` for state transitions (`NEW_LINE`, `ASCEND`).
+- Recursively calls itself to handle nested scopes (e.g., encountering `{`).
+- Relies on `longjmp` for fatal, unrecoverable errors (e.g., nesting depth exceeded).
+- Checks a global interrupt flag to safely terminate execution if an external signal is caught.
+
+**Pitfalls:** This density of control flow transitions is hard to read and optimize. If pointer parameters or global variables aren't handled meticulously, state corruptions occur.
+
+**Connections:** Serves as the running example for sections 19.3, 19.4, 19.5, and 19.6.
+
+### Recap
+
+- Complex C code often combines multiple control flow strategies.
+- The recursive descent parser serves as a masterclass in using `goto`, recursion, and `longjmp` effectively.
+
+---
+
+## 19.2. Sequencing
+
+### Evaluation Order and Sequence Points
+
+**What it is:** In C, expressions are not always evaluated exactly in the order they are written from left to right. Sequence points are specific points in the program execution where all side effects of previous evaluations are guaranteed to be complete.
+
+**Why it matters / how it works:** The compiler has the freedom to reorder, interleave, or delay the evaluation of expressions to optimize execution, provided it respects sequence points. If code modifies the same object multiple times between sequence points, the behavior is undefined or indeterminate.
+
+**Key details:**
+
+- Sequence points occur at the end of a statement (`;`), before a comma operator (`,`), at the end of a declaration, and at the end of controlling expressions (`if`, `switch`, `for`, `while`).
+- Short-circuit evaluation (`&&`, `||`, `?:`) introduces sequence points.
+- Function calls introduce a sequence point _after_ the evaluation of the function designator and arguments, but _before_ the body executes.
+
+**Pitfalls:** Assuming left-to-right evaluation of function arguments is a major pitfall.
+
+**Connections:** Relates to Chapter 4 (expressions) where evaluation order was first introduced.
+
+> Takeaway 19.2 #1 _Side effects in functions can lead to indeterminate results._
+
+**Explanation:** If a function mutates an object, and that function is called multiple times within an unsequenced context (like arguments to another function call), the order of those mutations is unpredictable. The C standard calls this "indeterminately sequenced".
 
 ```c
+// Demonstrating Takeaway 19.2 #1
 #include <stdio.h>
+#include <stdlib.h>
 
-// Function with side effects on the target pointed to by x
-static unsigned add_and_update(unsigned* x, unsigned const* y) {
-    return *x += *y; // Takeaway 19.2 #3: Assignment/increment updates are sequenced after operand evaluation
+// Function with a side effect on *x
+unsigned add(unsigned* x, unsigned const* y) {
+    return *x += *y;
 }
 
-void demo_sequencing_and_side_effects(void) {
+int main(void) {
     unsigned a = 3;
     unsigned b = 5;
 
-    // Takeaway 19.2 #1 & #4: Function calls are sequenced relative to the caller,
-    // BUT the two argument expressions below are INDETERMINATELY SEQUENCED.
-    // Execution will either evaluate add_and_update(&a, &b) first (a=8, b=13)
-    // OR add_and_update(&b, &a) first (b=8, a=11) depending on the compiler.
-    printf("a = %u, b = %u\n", add_and_update(&a, &b), add_and_update(&b, &a));
-
-    // Takeaway 19.2 #5: Elements in compound initializers are also indeterminately sequenced.
-    unsigned x = 1;
-    unsigned arr = { x++, x++ }; // Order of evaluation for array initializers is indeterminate
-    printf("arr: {%u, %u}\n", arr, arr);
+    // The evaluation order of add(&a, &b) and add(&b, &a) is not fixed.
+    // They are indeterminately sequenced.
+    printf("a = %u, b = %u\n", add(&a, &b), add(&b, &a));
+    return EXIT_SUCCESS;
 }
+/* Expected behavior/output:
+   It may print "a = 8, b = 13" OR "a = 11, b = 8" depending on the compiler.
+   Both are standard-compliant.
+   What goes wrong if... you rely on this ordering for critical logic? Your program
+   will have hidden bugs that only appear when switching compilers or optimization flags. */
 ```
 
-### 3. Short Jumps & Object Lifetimes (Section 19.3)
-Short jumps are implemented using **`goto`** and target **labels** within the same function body.
+> Takeaway 19.2 #2 _The specific operation of any operator is sequenced after the evaluation of all its operands._
 
-* **Takeaway 19.3 #1:** ***Each iteration defines a new instance of a local object***. Entering a loop body creates a fresh instance of automatic variables or compound literals, whereas repeating code using a `goto RETRY:` label retains the existing instance's lifetime.
-* **Takeaway 19.3 #2:** ***`goto` should only be used for exceptional changes in control flow***. Its primary legitimate uses are centralized error cleanup (jumping to a single `CLEANUP:` label) or state-machine parsing algorithms.
+**Explanation:** Before an operator (like `+`, `*`, or `==`) does its actual computation, the CPU must first fully evaluate everything on its left and right sides.
 
-#### Example
+> Takeaway 19.2 #3 _The effect of updating an object with any of the assignment, increment, or decrement operators is sequenced after the evaluation of its operands._
 
-Short jumps transfer control within the same function body using labels. A critical distinction exists between repeating code via a loop versus jumping back with `goto`: entering a loop block creates a **new instance and lifetime** for local objects, whereas `goto` retains the existing instance.
+**Explanation:** When doing `x = y + z`, `y` and `z` are fully evaluated, the addition happens, and _then_ the assignment to `x` takes place.
 
-* **Takeaway 19.3 #1:** *Each iteration defines a new instance of a local object*.
-* **Takeaway 19.3 #2:** *`goto` should only be used for exceptional changes in control flow*.
+> Takeaway 19.2 #4 _A function call is sequenced with respect to all evaluations of the caller._
 
-```c
-#include <stdio.h>
-#include <stdbool.h>
+**Explanation:** Once a function's arguments are fully evaluated, the jump into the function happens. The entire body of the function executes and completes before the caller resumes evaluating the rest of its expression.
 
-static int get_next_val(void) {
-    static int val = 0;
-    return ++val;
-}
+> Takeaway 19.2 #5 _Initialization list expressions for array or structure types are indeterminately sequenced._
 
-void demo_short_jumps_and_lifetimes(void) {
-    size_t* ip1 = nullptr;
-
-    // 1. LOOP ITERATION LIFETIME:
-    // Takeaway 19.3 #1: Each iteration of while defines a NEW instance of the compound literal.
-    size_t iterations = 0;
-    while (iterations < 1) {
-        ip1 = &(size_t){ (size_t)get_next_val() }; // Lifetime of this compound literal ends at while '}'
-        ++iterations;
-    }
-    // Dereferencing ip1 here is invalid because the object's lifetime has ended!
-
-    // 2. GOTO REPEAT LIFETIME:
-    // Jumping to a label does NOT create a new block scope, so the compound literal stays alive.
-    size_t* ip2 = nullptr;
-    bool retry = true;
-
-RETRY_LABEL:
-    ip2 = &(size_t){ (size_t)get_next_val() }; // Life continues across goto jump
-    if (retry) {
-        retry = false;
-        // Takeaway 19.3 #2: Use goto primarily for exceptional conditions or specific state-machine parsing
-        goto RETRY_LABEL;
-    }
-
-    // ip2 is still valid here because the definition block was not exited
-    printf("Value via goto object: %zu\n", *ip2);
-}
-```
-
-### 4. Functions & Recursion (Section 19.4)
-Function calls suspend caller execution and create isolated frame contexts.
-
-* **Takeaway 19.4 #1:** ***Each function call defines a new instance of a local object***. Recursive invocations operate on independent copies of local variables on the call stack. Modifying shared state via pointers across recursive calls weakens this isolation and complicates compiler optimization.
-
-#### Example
-
-When a function recurses, each call operates on its own independent instance of local automatic variables.
-
-* **Takeaway 19.4 #1:** *Each function call defines a new instance of a local object*.
+**Explanation:** When you write `int arr[2] = {f(), g()};`, the compiler can call `g()` before `f()` or vice-versa.
 
 ```c
+// Demonstrating Takeaways 19.2 #4 and #5
 #include <stdio.h>
 
-static void recursive_depth_counter(unsigned current_level, unsigned max_level) {
-    // Takeaway 19.4 #1: Every recursive invocation creates a distinct instance of 'local_frame_id'
-    unsigned local_frame_id = current_level;
-
-    printf("Entering recursion level %u (Frame ID: %u)\n", current_level, local_frame_id);
-
-    if (current_level < max_level) {
-        recursive_depth_counter(current_level + 1, max_level);
-    }
-
-    // When returning, local_frame_id retains the exact value of this call's frame instance
-    printf("Unwinding recursion level %u (Frame ID: %u)\n", current_level, local_frame_id);
+int call_first(void) {
+    printf("1 ");
+    return 1;
+}
+int call_second(void) {
+    printf("2 ");
+    return 2;
 }
 
-void demo_function_recursion(void) {
-    recursive_depth_counter(1, 3);
+int main(void) {
+    // Array initialization: Indeterminately sequenced!
+    // It might print "1 2 " or "2 1 "
+    int arr[] = { call_first(), call_second() };
+    return 0;
 }
 ```
 
-### 5. Long Jumps: `setjmp` and `longjmp` (Section 19.5)
-The `<setjmp.h>` header provides a mechanism to restore execution to an earlier calling context across arbitrary nested function calls, bypassing regular `return` cascades.
+### Recap
 
-#### Mechanics of `setjmp` and `longjmp`
-* `int setjmp(jmp_buf target)`: Saves the execution environment (stack pointer, instruction pointer, registers) into `target`.
-* `[[noreturn]] void longjmp(jmp_buf target, int condition)`: Restores the saved context and transfers control back to `setjmp`.
+- C does not guarantee strict left-to-right evaluation.
+- Sequence points define the boundaries where side-effects must settle.
+- Never depend on the evaluation order of function arguments or initializer lists if they contain side effects.
 
-#### Key Rules & Takeaways
-* **Takeaway 19.5 #1:** ***`longjmp` never returns to the caller***.
-* **Takeaway 19.5 #2:** ***When reached through normal control flow, a call to `setjmp` marks the call location as a jump target and returns 0***.
-* **Takeaway 19.5 #3:** ***Leaving the scope of a call to `setjmp` invalidates the jump target***. Calling `longjmp` on a `jmp_buf` after its defining function has returned causes undefined behavior.
-* **Takeaway 19.5 #4:** ***A call to `longjmp` transfers control directly to the position set by `setjmp` as if that had returned the condition argument***.
-* **Takeaway 19.5 #5:** ***A 0 as a condition parameter to `longjmp` is replaced by 1***. This ensures `setjmp` never returns `0` upon a long jump.
-* **Takeaway 19.5 #6:** ***`setjmp` may be used only in simple comparisons inside controlling expressions of conditionals***. It cannot be assigned to variables in complex expressions.
-* **Takeaway 19.5 #7:** ***Optimization interacts badly with calls to `setjmp`***.
-* **Takeaway 19.5 #8:** ***Objects modified across `longjmp` must be `volatile`***. Compilers assume local variables in `setjmp`'s frame are unmodified unless qualified with `volatile`.
-* **Takeaway 19.5 #9 & #A:** ***`volatile` objects are reloaded from memory each time they are accessed*** and ***stored each time they are modified***.
-* **Takeaway 19.5 #B:** ***The `typedef` for `jmp_buf` hides an array type***. Passing `jmp_buf` to functions automatically rewrites to a pointer, creating implicit pass-by-reference behavior.
+---
 
-#### Example
+## 19.3. Short jumps
 
-`<setjmp.h>` allows transferring execution across arbitrary nested function frames directly back to a saved calling context. Because optimization assumes local variables in `setjmp`'s frame are unmodified across the jump, **any variable modified between `setjmp` and `longjmp` must be qualified as `volatile`**.
+### `goto` and Labels
 
-* **Takeaway 19.5 #1:** *`longjmp` never returns to the caller*.
-* **Takeaway 19.5 #2 & #4:** *`setjmp` returns 0 when reached normally, and returns the condition value when reached via `longjmp`*.
-* **Takeaway 19.5 #3:** *Leaving the scope of a call to `setjmp` invalidates the jump target*.
-* **Takeaway 19.5 #5:** *A 0 passed as a condition parameter to `longjmp` is replaced by 1*.
-* **Takeaway 19.5 #6:** *`setjmp` may be used only in simple comparisons inside controlling expressions of conditionals*.
-* **Takeaway 19.5 #7 & #8:** *Optimization interacts badly with `setjmp`; objects modified across `longjmp` must be `volatile`*.
-* **Takeaway 19.5 #9 & #A:** *`volatile` objects are reloaded from memory on read and stored on write*.
-* **Takeaway 19.5 #B:** *The `typedef` for `jmp_buf` hides an array type* (creating implicit pass-by-reference semantics).
+**What it is:** `goto` is a jump statement that transfers control unconditionally to a specified label within the same function.
+
+**Why it matters / how it works:** It allows breaking out of deeply nested loops or establishing a single exit/cleanup point in a function.
+
+**Key details:**
+
+- Labels have function scope (they are visible everywhere inside the function).
+- Jumping out of a block is safe, but jumping _into_ a block bypassing object initialization can lead to undefined behavior or logical errors.
+
+**Pitfalls:** Overusing `goto` results in "spaghetti code", making it impossible to track state. Jumping past a variable length array (VLA) declaration is invalid.
+
+> Takeaway 19.3 #1 _Each iteration defines a new instance of a local object._
+
+**Explanation:** If you define a block-scoped variable in a loop (like `for`), each time the loop restarts, it's a conceptually new object. However, if you use `goto` to jump _backwards_ into the middle of a block without exiting it, the object might not be re-initialized.
+
+> Takeaway 19.3 #2 _goto should only be used for exceptional changes in control flow._
+
+**Explanation:** Use it for error handling (jumping to cleanup code at the end of a function) or breaking out of a nested loop where `break` would only exit one level.
 
 ```c
+// Demonstrating Takeaway 19.3 #1 and #2
+#include <stdio.h>
+
+int main(void) {
+    int attempts = 0;
+
+RETRY: // A label for our short jump
+    attempts++;
+    int loop_scoped_var = attempts; // Re-assigned upon jumping back
+
+    printf("Attempt %d\n", loop_scoped_var);
+
+    if (attempts < 3) {
+        // Exceptional control flow: retry logic
+        goto RETRY;
+    }
+
+    // What goes wrong if we jump over initialization?
+    // goto BAD_JUMP;
+    // int uninitialized_var = 42;
+    // BAD_JUMP:
+    // printf("%d", uninitialized_var); // Undefined behavior!
+
+    return 0;
+}
+/* Expected behavior/output:
+   Attempt 1
+   Attempt 2
+   Attempt 3
+*/
+```
+
+### Recap
+
+- `goto` provides function-scoped unconditional jumps.
+- Use `goto` sparingly, primarily for error cleanup.
+- Be cautious of how jumps interact with the lifetimes and initializations of local variables.
+
+---
+
+## 19.4. Functions
+
+### Recursion and Local State
+
+**What it is:** Functions calling themselves directly or indirectly.
+
+**Why it matters / how it works:** Recursion is a natural fit for parsing nested structures. The hardware implements this using the call stack, pushing a new frame with local variables for each call.
+
+**Key details:**
+
+- A pointer passed through recursive layers modifies the single underlying object.
+
+**Pitfalls:** Stack overflow if recursion goes too deep. Pointer aliasing and modification hiding optimization opportunities.
+
+> Takeaway 19.4 #1 _Each function call defines a new instance of a local object._
+
+**Explanation:** Every time a function is called recursively, it gets its own, fresh copy of local variables (unless they are `static`). These instances do not interact unless addresses are passed explicitly.
+
+```c
+// Demonstrating Takeaway 19.4 #1
+#include <stdio.h>
+
+void recursive_count(int depth) {
+    // Each call gets a unique instance of 'local_val'
+    int local_val = depth;
+
+    if (depth > 0) {
+        recursive_count(depth - 1);
+    }
+    // As the stack unwinds, each instance retains its distinct value
+    printf("%d ", local_val);
+}
+
+int main(void) {
+    recursive_count(3);
+    return 0;
+}
+/* Expected behavior/output:
+   0 1 2 3
+   What goes wrong if... 'local_val' was declared 'static'?
+   It would be shared across all calls, printing "0 0 0 0".
+*/
+```
+
+### Recap
+
+- Function calls (including recursive ones) encapsulate state.
+- Pointers passed down the call chain manipulate shared state, requiring careful tracking.
+
+## 19.5. Long jumps
+
+### Cross-Function Exceptional Control Flow (`setjmp` / `longjmp`)
+
+**What it is:** The `<setjmp.h>` header provides a mechanism to save the current execution context (CPU registers, stack pointer) and jump back to it later from a deeply nested function call, bypassing normal `return` paths.
+
+**Why it matters / how it works:** This is C's rudimentary form of exception handling. `setjmp` sets the "catch" point. `longjmp` "throws" an exception back to that point.
+
+**Key details:**
+
+- `jmp_buf`: An opaque array type used to store the context.
+- `setjmp(buf)`: Saves context. Returns 0 when initially called directly.
+- `longjmp(buf, val)`: Restores context. Causes the matching `setjmp` to appear as if it returned `val`.
+
+**Pitfalls:** Memory leaks (if you jump over `free()` calls), un-restored local variables (due to optimizations), and jumping to a dead context.
+
+> Takeaway 19.5 #1 _longjmp never returns to the caller._
+
+**Explanation:** `longjmp` behaves like a one-way ticket. The function that calls `longjmp` is immediately terminated, and execution resumes at the `setjmp` point. It has the `[[noreturn]]` attribute.
+
+> Takeaway 19.5 #2 _When reached through normal control flow, a call to setjmp marks the call location as a jump target and returns 0._
+
+**Explanation:** The first time `setjmp` is executed, it takes a snapshot and yields `0`. This is how you differentiate between the "setup" phase and the "jumped-back" phase.
+
+> Takeaway 19.5 #3 _Leaving the scope of a call to setjmp invalidates the jump target._
+
+**Explanation:** If the function containing `setjmp` returns, the stack frame is destroyed. Calling `longjmp` with that `jmp_buf` afterward results in undefined behavior (usually a severe crash).
+
+> Takeaway 19.5 #4 _A call to longjmp transfers control directly to the position set by setjmp as if that had returned the condition argument._
+
+**Explanation:** If you call `longjmp(target, 5)`, the program teleports back to the `setjmp(target)` location, and `setjmp` now evaluates to `5`.
+
+> Takeaway 19.5 #5 _A 0 as a condition parameter to longjmp is replaced by 1._
+
+**Explanation:** Because `setjmp` returning `0` signifies the initial setup, `longjmp(buf, 0)` is forbidden. If you try it, the C standard mandates it is converted to `1` so your program doesn't infinitely loop thinking it's setting up again.
+
+> Takeaway 19.5 #6 _setjmp may be used only in simple comparisons inside controlling expression of conditionals._
+
+**Explanation:** You cannot use `setjmp` in complex arithmetic like `a = setjmp(buf) + 5;`. It must be the entire controlling expression, like `if (setjmp(buf) == 0)` or `switch (setjmp(buf))`.
+
+> Takeaway 19.5 #7 _Optimization interacts badly with calls to setjmp._
+
+**Explanation:** Compilers aggressively cache local variables in CPU registers. `setjmp` only saves the registers _at that exact moment_. If a local variable is changed after `setjmp`, and then `longjmp` occurs, the compiler might restore the old, cached value instead of the modified value.
+
+> Takeaway 19.5 #8 _Objects modified across longjmp must be volatile._
+
+**Explanation:** To prevent the optimizer from caching a variable in a register and losing its updated state during a `longjmp`, you must qualify the variable with `volatile`.
+
+> Takeaway 19.5 #9 _volatile objects are reloaded from memory each time they are accessed._
+
+**Explanation:** The compiler is forbidden from caching a `volatile` object. It must fetch it from actual RAM every single time you read it.
+
+> Takeaway 19.5 #A _volatile objects are stored each time they are modified._
+
+**Explanation:** Changes to `volatile` variables are written out to memory immediately, ensuring that if a `longjmp` or hardware interrupt happens right after, the new value is safely in memory.
+
+> Takeaway 19.5 #B _The typedef for jmp_buf hides an array type._
+
+**Explanation:** `jmp_buf` is declared something like `typedef struct context jmp_buf[1];`. Because it's an array, when you pass it to functions, it decays to a pointer automatically. You can't assign one `jmp_buf` to another using `=`.
+
+```c
+// Demonstrating Takeaways 19.5 #1 to #A
 #include <stdio.h>
 #include <setjmp.h>
+#include <stdlib.h>
 
-enum parse_status {
-    STATUS_OK = 0,
-    STATUS_TOO_DEEP,
-    STATUS_INVALID_SYNTAX
-};
+jmp_buf exception_env;
 
-// Functions calling longjmp must receive jmp_buf (which decays to a pointer)
-static void parse_nested_element(jmp_buf target_buf, unsigned level) {
-    if (level > 5) {
-        // Takeaway 19.5 #1: longjmp never returns to its caller.
-        // Takeaway 19.5 #4: Returns control back to setjmp with the condition argument.
-        longjmp(target_buf, STATUS_TOO_DEEP);
-    }
+void deep_function(void) {
+    printf("Inside deep_function. Throwing error...\n");
+    // #1: Never returns. #4: Transfers control returning '2'
+    // #5: If we passed 0 here, it would become 1.
+    longjmp(exception_env, 2);
+    printf("This will never print.\n");
 }
 
-void demo_long_jumps(void) {
-    jmp_buf jump_target;
+int main(void) {
+    // #8, #9, #A: Must be volatile if modified between setjmp and longjmp
+    volatile int state = 0;
 
-    // Takeaway 19.5 #8: Variables modified between setjmp and longjmp MUST be volatile!
-    // Non-volatile variables modified in caller frames will be improperly cached by compiler optimizations.
-    unsigned volatile nesting_depth = 0;
-
-    // Takeaway 19.5 #6: setjmp may ONLY be called inside simple conditional controlling expressions!
-    // Takeaway 19.5 #2: Returns 0 during normal execution flow when setting up the jump target.
-    switch (setjmp(jump_target)) {
-        case STATUS_OK:
-            nesting_depth = 10; // Modifying volatile variable
-            parse_nested_element(jump_target, nesting_depth);
-            puts("Parsing completed successfully.");
+    // #2 & #6: Normal flow returns 0. Used in a switch conditional.
+    // #B: exception_env is passed (decays to pointer)
+    switch (setjmp(exception_env)) {
+        case 0:
+            printf("Setup complete. state = %d\n", state);
+            state = 1; // Modified across the jump
+            deep_function();
             break;
-
-        case STATUS_TOO_DEEP:
-            // Takeaway 19.5 #9 & #A: Volatile guarantees we read the updated value (10) from memory
-            printf("Error recovery: Nesting level %u was too deep!\n", nesting_depth);
+        case 1:
+            // Would trigger if longjmp(..., 0) was called.
+            printf("Caught condition 1\n");
             break;
-
-        default:
-            puts("Unknown error condition encountered.");
+        case 2:
+            printf("Caught error 2. state is guaranteed to be %d\n", state);
             break;
     }
 
-    // Takeaway 19.5 #3: Returning from this function invalidates jump_target!
+    // #3: If main returns, exception_env is dead.
+    return 0;
 }
+/* Expected behavior/output:
+   Setup complete. state = 0
+   Inside deep_function. Throwing error...
+   Caught error 2. state is guaranteed to be 1
+
+   What goes wrong if... 'state' was not volatile? An aggressive optimizing compiler
+   might have printed "state is guaranteed to be 0" after the jump because it
+   cached the initial value.
+*/
 ```
 
-### 6. Signal Handlers & Asynchronous Control Flow (Section 19.6)
-Signals handle hardware interrupts (traps/synchronous signals like `SIGSEGV` or `SIGFPE`) or software events (asynchronous signals like `SIGINT` or `SIGTERM`).
+### Recap
 
-#### Execution Model & Restrictions
-* **Takeaway 19.6 #1:** ***C’s signal-handling interface is minimal and should only be used for elementary situations***.
-* **Takeaway 19.6 #2:** ***Signal handlers can kick in at any point of execution***.
-* **Takeaway 19.6 #3:** ***After return from a signal handler, execution resumes exactly where it was interrupted***.
-* **Takeaway 19.6 #4:** ***Any C statement may correspond to several processor instructions***. An interrupt occurring mid-statement can leave variables in partial/zombie states.
-* **Takeaway 19.6 #5:** ***Signal handlers need types with uninterruptible operations***.
-* **Takeaway 19.6 #6:** ***Objects of type `sig_atomic_t` should not be used as counters***. Read-modify-write operations (like `++`) can be split across machine instructions. Safe cross-handler flags should use `volatile sig_atomic_t` or lock-free atomic types (`atomic_flag`, `_Atomic`).
-* **Takeaway 19.6 #7:** ***Unless specified otherwise, C library functions are not asynchronous signal safe***. Signal handlers must avoid I/O (like `printf`), dynamic memory (`malloc`/`free`), or `exit()`; they may only call `_Exit()`, `quick_exit()`, `signal()`, or atomic operations.
+- `setjmp`/`longjmp` allow deep stack unwinding.
+- They interact poorly with compiler optimizations.
+- Local variables modified between `setjmp` and `longjmp` _must_ be `volatile`.
 
-#### Example
+---
 
-Signal handlers execute asynchronously in response to hardware traps or software events. Because signals can interrupt statement execution mid-instruction, **signal handlers must only modify atomic objects or `volatile sig_atomic_t` flags**, and must refrain from calling non-reentrant C library functions (like `printf` or `malloc`).
+## 19.6. Signal handlers
 
-* **Takeaway 19.6 #1:** *C's signal-handling interface is minimal and should only be used for elementary situations*.
-* **Takeaway 19.6 #2 & #3:** *Signal handlers can kick in at any point; execution resumes where interrupted*.
-* **Takeaway 19.6 #4 & #5:** *Statements correspond to multiple CPU instructions; signal handlers need types with uninterruptible operations*.
-* **Takeaway 19.6 #6:** *Objects of type `sig_atomic_t` should not be used as counters* (read-modify-write operations like `++` are not uninterruptible).
-* **Takeaway 19.6 #7:** *Unless specified otherwise, C library functions are NOT asynchronous-signal-safe*.
+### Handling External Interrupts
+
+**What it is:** Signals are software interrupts delivered to a process by the OS or user (e.g., `Ctrl+C`). C provides `<signal.h>` to catch these events via a callback function.
+
+**Why it matters / how it works:** Programs need to respond to fatal errors (Segmentation Fault) or user requests to terminate smoothly. The OS pauses the normal thread, executes the registered signal handler, and then resumes the program.
+
+**Key details:**
+
+- `SIGINT`, `SIGTERM`, `SIGSEGV` are standard signals.
+- Dispositions can be custom handlers, `SIG_DFL` (default action), or `SIG_IGN` (ignore).
+
+**Pitfalls:** Signal handlers execute asynchronously. Doing almost _anything_ inside a signal handler (like calling `printf` or allocating memory) is strictly unsafe because the main program might have been interrupted right in the middle of modifying internal locks/state.
+
+> Takeaway 19.6 #1 _C’s signal-handling interface is minimal and should only be used for elementary situations._
+
+**Explanation:** Standard C signal handling is heavily restricted. Modern applications often rely on POSIX-specific extensions (like `sigaction`) for robust handling, but standard C implies keeping handlers extremely basic.
+
+> Takeaway 19.6 #2 _Signal handlers can kick in at any point of execution._
+
+**Explanation:** A signal doesn't wait for a sequence point or the end of a line. It can happen between CPU instructions representing a single C statement.
+
+> Takeaway 19.6 #3 _After return from a signal handler, execution resumes exactly where it was interrupted._
+
+**Explanation:** Unless the handler calls `abort()` or `longjmp()`, returning from the callback gives control back to the exact CPU cycle that was interrupted.
+
+> Takeaway 19.6 #4 _Any C statement may correspond to several processor instructions._
+
+**Explanation:** `x = y + z;` involves loading `y`, loading `z`, adding them, and storing to `x`. An interrupt can occur after the load but before the store.
+
+> Takeaway 19.6 #5 _Signal handlers need types with uninterruptible operations._
+
+**Explanation:** If a signal interrupts a multi-byte write to a standard integer, and the handler reads that integer, it might read a "zombie" half-written value. C provides `sig_atomic_t` (and atomic types in `<stdatomic.h>`) guaranteed to be read/written in one uninterruptible CPU instruction.
+
+> Takeaway 19.6 #6 _Objects of type sig_atomic_t should not be used as counters._
+
+**Explanation:** While reading/writing `sig_atomic_t` is indivisible, `count++` is not (Read, Modify, Write). If you need a counter, use atomic locks (`_Atomic`); `sig_atomic_t` is strictly a flag.
+
+> Takeaway 19.6 #7 _Unless specified otherwise, C library functions are not asynchronous signal safe._
+
+**Explanation:** You cannot call `printf`, `malloc`, or `exit` in a signal handler. They use internal global state (like locks) which might have been left in a corrupted half-state when the interrupt hit. You can only safely call `quick_exit`, `_Exit`, `abort`, `signal`, or atomic operations.
 
 ```c
+// Demonstrating Takeaways 19.6 #1 to #7
 #include <stdio.h>
-#include <stdlib.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <unistd.h> // for sleep() in posix environments
 
-// Takeaway 19.6 #5: Global flags modified by signal handlers MUST be volatile sig_atomic_t
-static volatile sig_atomic_t global_interrupt_flag = 0;
+// #5: Uninterruptible type flag
+volatile sig_atomic_t keep_running = 1;
 
-static void minimal_signal_handler(int sig) {
-    // Takeaway 19.6 #6: sig_atomic_t objects should NOT be used as counters (avoid ++)!
-    // Simple assignment = is guaranteed to be an uninterruptible store operation.
-    global_interrupt_flag = sig;
+// #1 & #7: Minimal interface, NO printf allowed here!
+void handle_sigint(int sig) {
+    // #6: We only assign, we DO NOT do keep_running++
+    keep_running = 0;
 
-    // Takeaway 19.6 #7: C library functions (printf, malloc, exit) are NOT async-signal-safe!
-    // Handlers should do as little work as possible and return immediately.
-    // Allowed safe terminations: quick_exit(), _Exit(), or raise().
-    signal(sig, SIG_DFL); // Reset signal disposition to default
+    // We can also reset the signal to default if we want
+    // signal(sig, SIG_DFL);
 }
 
-void demo_signal_handlers(void) {
-    // Takeaway 19.6 #1: Register custom handler using signal()
-    if (signal(SIGINT, minimal_signal_handler) == SIG_ERR) { // Interactive interrupt (Ctrl+C)
-        fputs("Failed to install SIGINT signal handler.\n", stderr);
-        return;
+int main(void) {
+    // Register the handler
+    if (signal(SIGINT, handle_sigint) == SIG_ERR) {
+        return EXIT_FAILURE;
     }
 
-    printf("Simulating work... Raising SIGINT signal.\n");
+    printf("Running... press Ctrl+C to stop.\n");
 
-    // Takeaway 19.6 #2: Signal handler kicks in asynchronously
-    raise(SIGINT);
-
-    // Takeaway 19.6 #3: After returning from signal handler, execution resumes right here
-    if (global_interrupt_flag != 0) {
-        printf("Main thread captured interrupt flag: %d\n", global_interrupt_flag);
+    // #2 & #3: Main loop can be interrupted anytime, resumes smoothly
+    while (keep_running) {
+        // Simulating work
     }
+
+    printf("\nGracefully stopped by signal!\n");
+    return EXIT_SUCCESS;
 }
+/* Expected behavior/output:
+   Running... press Ctrl+C to stop.
+   (User presses Ctrl+C)
+   Gracefully stopped by signal!
+
+   What goes wrong if... you put printf() inside handle_sigint?
+   If Ctrl+C happens *while* the main loop was doing a printf, the internal
+   mutexes inside stdout are deadlocked, and your program freezes forever.
+*/
 ```
 
-### Summary Table of Chapter 19 Takeaways
+### Recap
 
-| Takeaway ID | Rule Description |
-| :--- | :--- |
-| **19.2 #1** | *Side effects in functions can lead to indeterminate results.* |
-| **19.3 #1** | *Each iteration defines a new instance of a local object.* |
-| **19.3 #2** | *`goto` should only be used for exceptional changes in control flow.* |
-| **19.4 #1** | *Each function call defines a new instance of a local object.* |
-| **19.5 #1** | *`longjmp` never returns to the caller.* |
-| **19.5 #2** | *When reached through normal control flow, a call to `setjmp` marks the call location as a jump target and returns 0.* |
-| **19.5 #3** | *Leaving the scope of a call to `setjmp` invalidates the jump target.* |
-| **19.5 #8** | *Objects modified across `longjmp` must be `volatile`.* |
-| **19.6 #2** | *Signal handlers can kick in at any point of execution.* |
-| **19.6 #6** | *Objects of type `sig_atomic_t` should not be used as counters.* |
-| **19.6 #7** | *Unless specified otherwise, C library functions are not asynchronous signal safe.* |
+- Signals represent asynchronous external events.
+- Signal handlers must be incredibly simplistic.
+- Communicate with the main thread using `volatile sig_atomic_t` flags.
+- Do not call standard C library functions (except a select few) inside a handler.
 
+---
+
+## Summary
+
+The execution of C code follows a standard sequence dictated by control flow statements and defined boundaries known as sequence points. However, this linearity can be heavily manipulated using features like `goto` for local jumps, and `setjmp`/`longjmp` for cross-function stack unwinding. These tools, while powerful for error handling and deep parsing (like the recursive descent parser), interfere significantly with compiler optimizations, necessitating the use of the `volatile` keyword to ensure data integrity. Furthermore, asynchronous external events introduce signals, which interrupt the program at unpredictable micro-instruction levels. Handling signals safely requires strict adherence to asynchronous-signal-safe practices, primarily communicating state via indivisible `sig_atomic_t` flags to prevent race conditions and deadlocks.
+
+---
+
+## Self-Check Questions
+
+1.  **What defines a "sequence point" in C?**
+    A point in execution where all side effects from previous evaluations are completed and subsequent side effects have not begun (e.g., the end of a statement `;`).
+
+2.  **Why is the evaluation order of function arguments dangerous to rely on?**
+    The order is indeterminately sequenced; the compiler can choose any order, meaning side effects in the arguments can lead to unpredictable results.
+
+3.  **How does a `goto` statement interact with local variable lifetimes if it jumps backward in a loop?**
+    Each loop iteration conceptually creates new instances of local objects. Jumping back restarts the block, meaning objects will be re-initialized.
+
+4.  **What is the purpose of the `jmp_buf` type?**
+    It is an opaque array type used to store the hardware execution context (registers, stack pointer) for `setjmp` and `longjmp`.
+
+5.  **Why does `longjmp` have the `[[noreturn]]` attribute?**
+    Because it abandons the current function's control flow and teleports the execution back to the corresponding `setjmp` call location; it never reaches the end of its own function.
+
+6.  **If `setjmp(buf)` is evaluated normally for the first time, what does it return?**
+    It returns `0`.
+
+7.  **Why must local variables modified between `setjmp` and `longjmp` be marked `volatile`?**
+    To prevent the compiler from caching them in registers. `volatile` forces writes and reads directly to/from memory, ensuring `longjmp` restores the true updated value.
+
+8.  **What happens if a signal handler interrupts a statement like `double x = y;`?**
+    Because `double` assignment may take multiple machine instructions, the interrupt might happen halfway through, leaving a "zombie" or partial value if the handler attempts to read it.
+
+9.  **Why shouldn't you use `count++` on a `sig_atomic_t` variable inside a signal handler?**
+    `sig_atomic_t` only guarantees that reads and writes are indivisible. `count++` is a read, modify, _and_ write operation, which can still be interrupted.
+
+10. **Name three C library functions that are safe to call inside a signal handler.**
+    `_Exit`, `quick_exit`, and `abort`. (Most others, like `printf` or `malloc`, are unsafe).
