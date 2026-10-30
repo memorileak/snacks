@@ -11,470 +11,485 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-In **Chapter 20: Threads** of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, the book explores concurrent execution in C. Standard C multithreading (introduced in C11 via `<threads.h>` and refined in C23) allows programs to split execution into concurrent **threads**, enabling asynchronous tasks, parallel processing, and responsive user interfaces.
+## 20. Threads
 
-Below is a detailed breakdown of the core concepts, synchronization primitives, resource management rules, and key takeaways from Chapter 20 across its seven main sections.
+### Overview
 
+**What it is:** Threads are a variation of control flow that allow programs to pursue several _tasks_ concurrently. A task is a part of the job to be executed by a program such that different tasks can be done with little or no interaction between each other. Threads in C are managed via the `<threads.h>` header, utilizing types like `thrd_t` (an opaque thread identifier) and `thrd_start_t` (a function pointer for the thread's starting point).
 
-### 1. Simple Interthread Control (Section 20.1)
-Threads run concurrently as independent execution flows sharing a single address space. The basic thread control API is defined in `<threads.h>`:
-* **Thread Creation (`thrd_create`):** Spawns a new thread executing a start function matching `int (*thrd_start_t)(void*)`.
-* **Thread Joining (`thrd_join`):** Blocks the calling thread until the specified thread finishes and retrieves its integer return value.
-* **Race Conditions & Atomics:** Simultaneously reading and writing non-atomic shared variables across threads without synchronization causes a **race condition**, which leads to execution failure.
-* **Takeaway 20.1 #1:** *If a thread \\(T_0\\) writes a non-atomic object that is simultaneously read or written by another thread \\(T_1\\), the execution fails*.
-* **Takeaway 20.1 #2:** *In view of execution in different threads, standard operations on atomic objects are indivisible and linearizable*.
-* **Takeaway 20.1 #3:** *Use the specifier syntax `_Atomic(T)` for atomic declarations*. Prefer specifier syntax over qualifier syntax for clarity.
-* **Takeaway 20.1 #4:** *There are no atomic array types*. To make array elements atomic, declare an array of atomic base elements (e.g., `_Atomic(double) A`).
-* **Takeaway 20.1 #5:** *Atomic objects are the privileged tool to force the absence of race conditions*.
+**Why it matters / how it works:** Concurrency enables programs to utilize modern multi-core processors efficiently, performing actions like drawing, computing, and handling I/O simultaneously (as demonstrated by the book's B9 Game of Life example). The `thrd_create` function launches a new thread passing a `void*` argument, and `thrd_join` blocks the calling thread until the target thread terminates.
 
-#### Example
+**Key details:**
 
-Concurrent threads share an address space. If one thread writes to a non-atomic object that another thread reads or writes simultaneously, the execution fails due to a race condition. Standard operations on atomic objects are indivisible and linearizable, making them the primary tool to prevent race conditions.
+- `thrd_create` signature: `int thrd_create(thrd_t*, thrd_start_t, void*);`
+- Thread start function signature: `int func(void*);`
+- `thrd_join` captures the thread's return value
 
-* **Takeaway 20.1 #1:** *If a thread $(T_0)$ writes a non-atomic object that is simultaneously read or written by another thread $(T_1)$, the execution fails*.
-* **Takeaway 20.1 #2:** *In view of execution in different threads, standard operations on atomic objects are indivisible and linearizable*.
-* **Takeaway 20.1 #3:** *Use the specifier syntax `_Atomic(T)` for atomic declarations*.
-* **Takeaway 20.1 #4:** *There are no atomic array types* (declare arrays of atomic elements instead).
-* **Takeaway 20.1 #5:** *Atomic objects are the privileged tool to force the absence of race conditions*.
+**Pitfalls:** Failing to manage simultaneous access to shared objects causes race conditions.
 
-```c
-#include <stdio.h>
-#include <stdbool.h>
-#include <threads.h> // Provides thrd_t, thrd_create, thrd_join
-#include <stdatomic.h> // Provides _Atomic specifier syntax
+**Connections:** Builds upon standard control flow and introduces concurrency, requiring an understanding of atomic access (Section 21).
 
-// Structure holding atomic state shared race-free across threads
-typedef struct {
-    // Takeaway 20.1 #3: Use specifier syntax _Atomic(T) for atomic fields
-    _Atomic(size_t) counter;  // Indivisible atomic increment/read
-    _Atomic(bool)   finished; // Linearizable status flag
+**Recap:**
 
-    // Takeaway 20.1 #4: No atomic array types exist; declare an array of atomic elements
-    _Atomic(double) values;
-} shared_state;
-
-// Thread start function matching prototype: int (*thrd_start_t)(void*)
-static int worker_task(void* arg) {
-    shared_state* state = arg;
-
-    for (size_t i = 0; i < 1000; ++i) {
-        // Atomic operations are indivisible and linearizable across threads
-        state->counter++;
-    }
-
-    // Signals completion race-free
-    state->finished = true;
-    return 0; // Return value retrieved by thrd_join
-}
-
-void demo_simple_interthread_control(void) {
-    shared_state state = { .counter = 0, .finished = false };
-    thrd_t thread_id;
-
-    // Launch worker thread
-    if (thrd_create(&thread_id, worker_task, &state) == thrd_success) {
-        // Wait for worker thread termination and collect exit status
-        int res = 0;
-        thrd_join(thread_id, &res);
-        printf("Final counter = %zu (Finished flag = %s)\n",
-               state.counter, state.finished ? "true" : "false");
-    }
-}
-```
-
-### 2. Race-Free Initialization and Destruction (Section 20.2)
-Shared objects must be initialized into a controlled state before any concurrent thread reads or writes them, and they must never be accessed after destruction.
-
-* **Initialization Strategies:**
-  1. **Static Duration:** Objects with static storage duration are initialized before thread creation.
-  2. **Parent Pre-Initialization:** The thread creating a shared object initializes it *before* launching concurrent threads that access it.
-  3. **One-Time Dynamic Initialization (`call_once`):** For static objects requiring dynamic setup after startup, `call_once(&flag, func)` guarantees that `func` is executed exactly once across all threads, holding back other threads until initialization completes.
-* **Standard I/O Streams:** Most C library stream functions are required to be thread-safe.
-* **Takeaway 20.2 #1:** *A properly initialized `FILE*` can be used race-free by several threads*.
-* **Takeaway 20.2 #2:** *Concurrent write operations should print entire lines at once*.
-* **Takeaway 20.2 #3:** *Destruction and deallocation of shared dynamic objects need a lot of care*. Ensure all threads have finished accessing shared memory before invoking `free()` or closing file streams.
-
-#### Example
-
-Shared objects must be initialized into a valid state before any thread reads or writes them. `call_once` guarantees one-time dynamic initialization across threads.
-
-* **Takeaway 20.2 #1:** *A properly initialized `FILE*` can be used race-free by several threads*.
-* **Takeaway 20.2 #2:** *Concurrent write operations should print entire lines at once*.
-* **Takeaway 20.2 #3:** *Destruction and deallocation of shared dynamic objects need a lot of care*.
+- Threads run tasks concurrently.
+- Managed via `<threads.h>`.
+- Created with `thrd_create` and synchronized at the end with `thrd_join`.
 
 ```c
 #include <stdio.h>
 #include <threads.h>
 
-static once_flag init_flag = ONCE_FLAG_INIT; // One-time execution flag
-static FILE* shared_log_file = NULL;
-
-static void init_logging_resource(void) {
-    // One-time dynamic initialization function
-    shared_log_file = stdout; // Connected to standard output stream
+// A simple thread start function compatible with thrd_start_t
+int my_thread_func(void* arg) {
+    int* val = (int*)arg;
+    printf("Hello from thread! Value: %d\\n", *val);
+    return 0; // Return value collected by thrd_join
 }
 
-static int logging_worker(void* arg) {
-    char const* thread_name = arg;
+int main(void) {
+    thrd_t thread_id;
+    int data = 42;
 
-    // Guarantees init_logging_resource runs exactly once across all threads
-    call_once(&init_flag, init_logging_resource);
-
-    // Takeaway 20.2 #1 & #2: FILE* streams are thread-safe if lines are printed all at once
-    if (shared_log_file) {
-        fprintf(shared_log_file, "[%s] Logging full line output race-free.\n", thread_name);
+    // Create the thread, pass the address of data
+    if (thrd_create(&thread_id, my_thread_func, &data) != thrd_success) {
+        return 1;
     }
 
+    // Wait for the thread to finish
+    thrd_join(thread_id, nullptr);
+    printf("Thread finished.\\n");
+    return 0;
+}
+/* Expected behavior/output:
+Hello from thread! Value: 42
+Thread finished.
+What goes wrong if... we forget thrd_join? The main thread might exit before the spawned thread finishes its printf, terminating the program prematurely.
+*/
+
+```
+
+---
+
+## 20.1 Simple interthread control
+
+### Race Conditions and Atomics
+
+**What it is:** A race condition occurs when there is potentially simultaneous, unprotected access to shared variables by multiple threads, where at least one access is a write . C solves this fundamentally via atomic objects.
+
+> Takeaway 20.1 #1 _If a thread T0 writes a non-atomic object that is simultaneously read or written by another thread T1, the execution fails._
+
+**Explanation:** Non-atomic objects do not guarantee indivisible read/write cycles. Interleaved instructions can leave the variable in an undefined, corrupted state .
+
+> Takeaway 20.1 #2 _In view of execution in different threads, standard operations on atomic objects are indivisible and linearizable._
+
+**Explanation:** "Indivisible" means the operation completes fully without interruption. "Linearizable" means operations across threads appear in a strict, globally consistent sequential order .
+
+> Takeaway 20.1 #3 _Use the specifier syntax `_Atomic(T)` for atomic declarations._
+
+**Explanation:** This qualifies a type `T` to be handled atomically by the compiler and hardware.
+
+> Takeaway 20.1 #4 _There are no atomic array types._
+
+**Explanation:** You cannot declare an array itself as atomic; atomic operations apply to scalar objects . (You can have an array of atomic objects, though it's often inefficient).
+
+> Takeaway 20.1 #5 _Atomic objects are the privileged tool to force the absence of race conditions._
+
+**Explanation:** The compiler explicitly manages atomic objects to ensure safe concurrent access, removing the undefined behavior of data races .
+
+**Recap:**
+
+- Data races cause undefined behavior.
+- Atomics (`_Atomic(T)`) provide indivisible, safe access.
+- Arrays cannot be atomic .
+
+```c
+#include <stdio.h>
+#include <threads.h>
+
+// _Atomic specifier prevents race conditions on this shared boolean
+_Atomic(bool) finished = false;
+
+int signal_thread(void* arg) {
+    // Indivisible write operation
+    finished = true;
     return 0;
 }
 
-void demo_race_free_initialization(void) {
-    thrd_t t1, t2;
-    thrd_create(&t1, logging_worker, "Thread-A");
-    thrd_create(&t2, logging_worker, "Thread-B");
+int main(void) {
+    thrd_t tid;
+    thrd_create(&tid, signal_thread, nullptr);
 
-    thrd_join(t1, NULL);
-    thrd_join(t2, NULL);
-    // Takeaway 20.2 #3: Ensure all threads finish before destroying shared objects
+    // Indivisible read operations
+    while (!finished) {
+        // block/wait
+    }
+    printf("Finished flag detected as true.\\n");
+    thrd_join(tid, nullptr);
+    return 0;
 }
+/* Expected behavior/output:
+Finished flag detected as true.
+What goes wrong if... `finished` was a plain `bool`?
+A data race occurs (Takeaway 20.1 #1), which could lead the compiler to optimize out the while loop entirely, causing an infinite loop.
+*/
+
 ```
 
-### 3. Thread-Local Data (Section 20.3)
-The simplest way to eliminate race conditions is to keep data completely thread-private rather than shared.
+---
 
-* **Takeaway 20.3 #1:** *Pass thread-specific data through function arguments*.
-* **Takeaway 20.3 #2:** *Keep thread-specific state in local variables*.
-* **`thread_local` Storage Class:** Annotating a variable with `thread_local` (or `_Thread_local`) gives each thread its own independent instance.
-* **Takeaway 20.3 #3:** *A `thread_local` variable has one separate instance for each thread*.
-* **Takeaway 20.3 #4:** *Use `thread_local` if initialization can be determined at compile time*.
-* **Thread-Specific Storage (`tss_t`):** When dynamic construction and destruction per thread are needed, use key-based thread-specific storage via `tss_create`, `tss_get`, `tss_set`, and `tss_delete` with a custom destructor callback (`tss_dtor_t`).
+## 20.2 Race-free initialization and destruction
 
-#### Example
+### Thread-safe Setup via call_once
 
-Separating data into thread-private instances eliminates race conditions without mutex overhead.
+**What it is:** Guaranteeing that shared data is set up before any thread accesses it and safely destroyed when all threads are done . `call_once` ensures a function is executed exactly once across all threads .
 
-* **Takeaway 20.3 #1:** *Pass thread-specific data through function arguments*.
-* **Takeaway 20.3 #2:** *Keep thread-specific state in local variables*.
-* **Takeaway 20.3 #3:** *A `thread_local` variable has one separate instance for each thread*.
-* **Takeaway 20.3 #4:** *Use `thread_local` if initialization can be determined at compile time*.
+> Takeaway 20.2 #1 _A properly initialized `FILE*` can be used race-free by several threads._
+
+**Explanation:** Most C standard stream functions (except `fopen`/`fclose`) are required to be race-free, making thread-safe logging possible .
+
+> Takeaway 20.2 #2 _Concurrent write operations should print entire lines at once._
+
+**Explanation:** While `FILE*` accesses are race-free (no corruption), character-by-character printing from multiple threads will interleave output confusingly. Printing a full line ensures logical coherence .
+
+> Takeaway 20.2 #3 _Destruction and deallocation of shared dynamic objects need a lot of care._
+
+**Explanation:** Knowing when the last thread has finished using an object is difficult . Premature freeing causes use-after-free bugs. Memory leaks occur if never freed .
+
+**Recap:**
+
+- Use static initialization where possible.
+- Use `call_once` with `once_flag` for dynamic one-time initialization .
+- Clean up securely (e.g., in `main` after all `thrd_join` calls) .
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
 #include <threads.h>
 
-// Takeaway 20.3 #3 & #4: Independent per-thread variable with compile-time initialization
-static thread_local size_t thread_private_counter = 0;
+once_flag flag = ONCE_FLAG_INIT;
 
-static tss_t dynamic_key; // Key for dynamic thread-specific storage
-
-static void destructor_callback(void* data_ptr) {
-    // Destructor invoked automatically when a thread exits
-    free(data_ptr);
+void do_init(void) {
+    printf("Initialization occurred exactly once.\\n");
 }
 
-static int thread_local_task(void* arg) {
-    int id = *(int*)arg; // Takeaway 20.3 #1: Pass thread data via arguments
-
-    // Takeaway 20.3 #2: Keep state in local variables or thread_local objects
-    thread_private_counter = (size_t)id * 100;
-
-    // DYNAMIC THREAD-SPECIFIC STORAGE (tss_t):
-    int* dynamic_val = malloc(sizeof *dynamic_val);
-    if (dynamic_val) {
-        *dynamic_val = id * 5;
-        tss_set(dynamic_key, dynamic_val); // Binds value to current thread
-    }
-
-    int* retrieved = tss_get(dynamic_key);
-    printf("Thread %d: Private Counter = %zu, TSS Value = %d\n",
-           id, thread_private_counter, retrieved ? *retrieved : 0);
-
-    return 0; // Exiting thread triggers destructor_callback for dynamic_key
+int worker(void* arg) {
+    // Guarantees do_init is called only once, even with multiple workers
+    call_once(&flag, do_init);
+    return 0;
 }
 
-void demo_thread_local_data(void) {
-    tss_create(&dynamic_key, destructor_callback); // Initialize TSS key with destructor
+int main(void) {
+    thrd_t t1, t2;
+    thrd_create(&t1, worker, nullptr);
+    thrd_create(&t2, worker, nullptr);
 
+    thrd_join(t1, nullptr);
+    thrd_join(t2, nullptr);
+    return 0;
+}
+/* Expected behavior/output:
+Initialization occurred exactly once.
+What goes wrong if... we used a simple boolean instead of call_once?
+Two threads checking `if(!initialized)` simultaneously might both run the initialization code.
+*/
+
+```
+
+---
+
+## 20.3 Thread-local data
+
+### Data Isolation
+
+**What it is:** Separating data by thread so synchronization is completely unnecessary . C provides the `thread_local` storage class and `tss_t` (thread-specific storage) .
+
+> Takeaway 20.3 #1 _Pass thread-specific data through function arguments._
+
+**Explanation:** The easiest way to isolate state is by passing distinct heap/stack pointers to the `thrd_create` void pointer argument .
+
+> Takeaway 20.3 #2 _Keep thread-specific state in local variables._
+
+**Explanation:** Function-local automatic variables are unique to the thread executing the function .
+
+> Takeaway 20.3 #3 _A `thread_local` variable has one separate instance for each thread._
+
+**Explanation:** Similar to static storage, but instantiated per-thread .
+
+> Takeaway 20.3 #4 _Use `thread_local` if initialization can be determined at compile time._
+
+**Explanation:** Because it works like static storage duration, dynamic initialization (like `malloc`) isn't directly compatible at declaration. For dynamic needs, use `tss_t` with `tss_create` .
+
+**Recap:**
+
+- Prefer function arguments/local variables for safety .
+- `thread_local` provides distinct file/static-scope variables per thread .
+- `tss_t` handles dynamic thread-specific storage .
+
+```c
+#include <stdio.h>
+#include <threads.h>
+
+// Each thread gets its own copy of this variable
+thread_local int thread_id = 0;
+
+int worker(void* arg) {
+    thread_id = *(int*)arg; // Safely writes without locking
+    printf("Thread %d sees thread_id: %d\\n", *(int*)arg, thread_id);
+    return 0;
+}
+
+int main(void) {
     thrd_t t1, t2;
     int id1 = 1, id2 = 2;
-    thrd_create(&t1, thread_local_task, &id1);
-    thrd_create(&t2, thread_local_task, &id2);
-
-    thrd_join(t1, NULL);
-    thrd_join(t2, NULL);
-
-    tss_delete(dynamic_key); // Clean up TSS key
+    thrd_create(&t1, worker, &id1);
+    thrd_create(&t2, worker, &id2);
+    thrd_join(t1, nullptr);
+    thrd_join(t2, nullptr);
+    return 0;
 }
+/* Expected output:
+Thread 1 sees thread_id: 1
+Thread 2 sees thread_id: 2
+What goes wrong if... `thread_local` was omitted?
+A race condition on a global `thread_id` would result in undefined behavior.
+*/
+
 ```
 
-### 4. Critical Data and Critical Sections (`mtx_t`) (Section 20.4)
-For complex data structures (like arrays, matrices, or structs) that cannot be declared atomic, thread access must be serialized using a **mutex** (`mtx_t`) to guard the **critical section**.
+---
 
-* **Mutex Lifetime & Operations:**
-  * **Takeaway 20.4 #1:** *Mutex operations provide linearizability*. Locking a mutex ensures all prior modifications made before releasing that mutex are visible to the acquiring thread.
-  * **Takeaway 20.4 #2:** *Every mutex must be initialized with `mtx_init`*. Standard C defines no static initializer for `mtx_t`. Mutex types include `mtx_plain`, `mtx_timed`, and recursive variants (`mtx_recursive`).
-  * **Takeaway 20.4 #3:** *A thread that holds a nonrecursive mutex must not call any of the mutex lock functions for it*. Doing so causes immediate deadlock.
-  * **Takeaway 20.4 #4:** *A recursive mutex is only released after the holding thread issues as many calls to `mtx_unlock` as it has acquired locks*.
-  * **Takeaway 20.4 #5:** *A locked mutex must be released before the termination of the thread*.
-  * **Takeaway 20.4 #6:** *A thread must only call `mtx_unlock` on a mutex that it holds*.
-  * **Takeaway 20.4 #7:** *Each successful mutex lock corresponds to exactly one call to `mtx_unlock`*.
-  * **Takeaway 20.4 #8:** *A mutex must be destroyed at the end of its lifetime*. Call `mtx_destroy` before a mutex goes out of scope or is freed.
+## 20.4 Critical data and critical sections
 
-#### Example
+### Mutexes (`mtx_t`)
 
-Complex shared data structures must be protected inside critical sections guarded by a mutex (`mtx_t`).
+**What it is:** When data is too large/complex for `_Atomic` (like large structs or arrays), we protect the code block accessing it (the _critical section_) using a mutex (`mtx_t` for mutual exclusion) .
 
-* **Takeaway 20.4 #1:** *Mutex operations provide linearizability*.
-* **Takeaway 20.4 #2:** *Every mutex must be initialized with `mtx_init`*.
-* **Takeaway 20.4 #3:** *A thread that holds a nonrecursive mutex must not call any of the mutex lock functions for it*.
-* **Takeaway 20.4 #4:** *A recursive mutex is only released after the holding thread issues as many calls to `mtx_unlock` as it has acquired locks*.
-* **Takeaway 20.4 #5:** *A locked mutex must be released before the termination of the thread*.
-* **Takeaway 20.4 #6:** *A thread must only call `mtx_unlock` on a mutex that it holds*.
-* **Takeaway 20.4 #7:** *Each successful mutex lock corresponds to exactly one call to `mtx_unlock`*.
-* **Takeaway 20.4 #8:** *A mutex must be destroyed at the end of its lifetime*.
+> Takeaway 20.4 #1 _Mutex operations provide linearizability._
+
+**Explanation:** A thread acquiring a mutex can rely on seeing all changes made by the previous threads that held and released it .
+
+> Takeaway 20.4 #2 _Every mutex must be initialized with `mtx_init`._
+
+**Explanation:** Mutexes have no static initializer in C; `mtx_init(&mtx, mtx_plain)` is mandatory before use .
+
+> Takeaway 20.4 #3 _A thread that holds a nonrecursive mutex must not call any of the locking functions for the same mutex again._
+
+**Explanation:** Attempting to lock an already-held non-recursive mutex causes a deadlock .
+
+> Takeaway 20.4 #8 _A mutex must be destroyed at the end of its lifetime._
+
+**Explanation:** Mutexes tie up system resources. You must call `mtx_destroy` before freeing the memory of a dynamically allocated mutex, or before its scope ends .
+
+**Recap:**
+
+- Use `mtx_t` for large data protection .
+- Must explicitly initialize (`mtx_init`) and destroy (`mtx_destroy`) .
+- Provides global ordering (linearizability) .
 
 ```c
 #include <stdio.h>
 #include <threads.h>
 
-typedef struct {
-        mtx_t mtx;       // Mutex protecting critical data
-        double data; // Critical non-atomic payload
-} critical_buffer;
+mtx_t mtx;
+int shared_counter = 0;
 
-void demo_critical_sections(void) {
-        critical_buffer buf;
-
-        // Takeaway 20.4 #2: Always initialize a mutex before use (mtx_plain or mtx_timed)
-        if (mtx_init(&buf.mtx, mtx_plain) != thrd_success) return;
-
-        // Takeaway 20.4 #1: Mutex operations provide linearizable critical sections
-        mtx_lock(&buf.mtx);
-        // --- CRITICAL SECTION BEGIN ---
-        buf.data = 42.0;
-        // --- CRITICAL SECTION END ---
-        // Takeaway 20.4 #5, #6, & #7: Each lock call must be paired with exactly one unlock by the owner
-        mtx_unlock(&buf.mtx);
-
-        // Takeaway 20.4 #8: Always destroy a mutex when its lifetime ends
-        mtx_destroy(&buf.mtx);
-}
-```
-
-### 5. Communicating Through Condition Variables (`cnd_t`) (Section 20.5)
-Condition variables (`cnd_t`) allow threads to sleep efficiently until signaled that a specific predicate or state change has occurred, avoiding wasteful busy-polling.
-
-* **Waiting & Signaling Mechanics:**
-  * Threads suspend execution using `cnd_wait(&cnd, &mtx)` or `cnd_timedwait(&cnd, &mtx, &ts)`. The associated mutex is temporarily released during the wait and reacquired before the function returns.
-  * Waking sleeping threads is triggered via `cnd_signal(&cnd)` (wakes one thread) or `cnd_broadcast(&cnd)` (wakes all waiting threads).
-* **Condition Predicate Loop:**
-  * **Takeaway 20.5 #1:** *On return from a `cnd_t` wait, the expression must be checked again*. Spurious wakeups or state changes by other threads mean `cnd_wait` calls must always be wrapped inside a `while (!predicate)` loop.
-* **Mutex Coupling & Lifetime:**
-  * **Takeaway 20.5 #2:** *A condition variable can only be used simultaneously with one mutex*.
-  * **Takeaway 20.5 #3:** *A `cnd_t` must be initialized dynamically*. Use `cnd_init(&cnd)`.
-  * **Takeaway 20.5 #4:** *A `cnd_t` must be destroyed at the end of its lifetime*. Use `cnd_destroy(&cnd)`.
-
-#### Example
-
-Condition variables (`cnd_t`) allow threads to sleep efficiently until signaled that a condition expression has changed.
-
-* **Takeaway 20.5 #1:** *On return from a `cnd_t` wait, the expression must be checked again*.
-* **Takeaway 20.5 #2:** *A condition variable can only be used simultaneously with one mutex*.
-* **Takeaway 20.5 #3:** *A `cnd_t` must be initialized dynamically*.
-* **Takeaway 20.5 #4:** *A `cnd_t` must be destroyed at the end of its lifetime*.
-
-```c
-#include <stdio.h>
-#include <stdbool.h>
-#include <threads.h>
-#include <time.h>
-
-typedef struct {
-    mtx_t mtx;
-    cnd_t cnd;
-    bool  work_ready; // Predicate expression
-} job_queue;
-
-static int consumer_thread(void* arg) {
-    job_queue* q = arg;
-
-    mtx_lock(&q->mtx);
-
-    // Takeaway 20.5 #1: Always re-check the condition expression inside a while loop!
-    while (!q->work_ready) {
-        struct timespec ts;
-        timespec_get(&ts, TIME_UTC);
-        ts.tv_sec += 1; // 1-second timeout limit
-
-        // Takeaway 20.5 #2: Use cnd_timedwait with the associated mutex
-        cnd_timedwait(&q->cnd, &q->mtx, &ts);
-    }
-
-    printf("Consumer: Work processed successfully!\n");
-    mtx_unlock(&q->mtx);
+int worker(void* arg) {
+    // Enter critical section
+    mtx_lock(&mtx);
+    shared_counter++; // Safe access to non-atomic shared data
+    mtx_unlock(&mtx);
+    // Exit critical section
     return 0;
 }
 
-void demo_condition_variables(void) {
-    job_queue q = { .work_ready = false };
+int main(void) {
+    mtx_init(&mtx, mtx_plain); // Mandatory initialization
 
-    mtx_init(&q.mtx, mtx_plain);
-    // Takeaway 20.5 #3: Initialize condition variable dynamically using cnd_init
-    cnd_init(&q.cnd);
+    thrd_t t1, t2;
+    thrd_create(&t1, worker, nullptr);
+    thrd_create(&t2, worker, nullptr);
 
-    thrd_t consumer;
-    thrd_create(&consumer, consumer_thread, &q);
+    thrd_join(t1, nullptr);
+    thrd_join(t2, nullptr);
 
-    // Producer updates predicate state inside the locked critical section
-    mtx_lock(&q.mtx);
-    q.work_ready = true;
-    cnd_signal(&q.cnd); // Wake up waiting consumer thread
-    mtx_unlock(&q.mtx);
-
-    thrd_join(consumer, NULL);
-
-    // Takeaway 20.5 #4: Destroy condition variable and mutex at end of lifetime
-    cnd_destroy(&q.cnd);
-    mtx_destroy(&q.mtx);
+    printf("Final counter: %d\\n", shared_counter);
+    mtx_destroy(&mtx); // Mandatory destruction
+    return 0;
 }
+/* Expected output:
+Final counter: 2
+What goes wrong if... mtx_destroy is omitted?
+System resources associated with the mutex might leak.
+*/
+
 ```
 
-### 6. More Sophisticated Thread Management (Section 20.6)
-Threads are peer tasks rather than strict hierarchies. Any thread can manage others if it holds their `thrd_t` handle.
+---
 
-* **Process Termination:**
-  * **Takeaway 20.6 #1:** *Returning from `main` or calling `exit` terminates all threads*.
-  * To exit `main` without terminating background threads, invoke `thrd_exit(result)` instead of `return`.
-* **Resource Release & Detaching:**
-  * Threads that will not be joined via `thrd_join` must be detached using `thrd_detach(thrd_current())` to free system resources automatically upon exit.
-* **Resource Yielding:**
-  * **Takeaway 20.6 #2:** *While blocking on `mtx_t` or `cnd_t`, a thread frees processing resources*.
-  * Threads can voluntarily pause or yield time slices using `thrd_sleep(&duration, &remaining)` or `thrd_yield()`.
+## 20.5 Communicating through condition variables
 
-#### Example
+### Event Waiting (`cnd_t`)
 
-Threads are peer tasks rather than strict hierarchies.
+**What it is:** A condition variable (`cnd_t`) suspends a thread efficiently until a specific condition becomes true, avoiding busy-waiting .
 
-* **Takeaway 20.6 #1:** *Returning from `main` or calling `exit` terminates all threads*.
-* **Takeaway 20.6 #2:** *While blocking on `mtx_t` or `cnd_t`, a thread frees processing resources*.
+> Takeaway 20.5 #1 _On return from a `cnd_t` wait, the expression must be checked again._
+
+**Explanation:** Wait functions (`cnd_wait`, `cnd_timedwait`) can suffer from "spurious wakeups", or another thread might have changed the condition before the waking thread re-acquired the mutex. Always wrap waits in a `while` loop checking the condition .
+
+> Takeaway 20.5 #2 _A condition variable can only be used simultaneously with one mutex._
+
+**Explanation:** To guarantee consistency during the unlock-wait-relock cycle, `cnd_wait` strictly binds to a specific mutex during the wait .
+
+> Takeaway 20.5 #3 _A `cnd_t` must be initialized dynamically._
+
+**Explanation:** `cnd_init` is required before use .
+
+> Takeaway 20.5 #4 _A `cnd_t` must be destroyed at the end of its lifetime._
+
+**Explanation:** Like mutexes, `cnd_destroy` must be called to free OS resources .
+
+**Recap:**
+
+- `cnd_wait` temporarily releases the mutex while waiting, and re-acquires it before returning .
+- Always wait inside a `while (condition_is_false)` loop .
+- Wake waiters using `cnd_signal` (one) or `cnd_broadcast` (all) .
 
 ```c
 #include <stdio.h>
 #include <threads.h>
 
-static int detached_worker(void* arg) {
-        // Detaches current thread so its system resources are reclaimed automatically upon exit
-        thrd_detach(thrd_current());
+mtx_t mtx;
+cnd_t cv;
+bool ready = false;
 
-        printf("Detached worker executing concurrently...\n");
-
-        // Voluntarily yield current time slice to other active threads
-        thrd_yield();
-
-        // Takeaway 20.6 #2: thrd_sleep releases processing resources while waiting
-        struct timespec delay = { .tv_nsec = 50000000 }; // 50 ms delay
-        thrd_sleep(&delay, NULL);
-
-        // Terminate ONLY this thread without killing sibling threads
-        thrd_exit(0);
+int waiter(void* arg) {
+    mtx_lock(&mtx);
+    // Takeaway 20.5 #1: Always check expression in a loop
+    while (!ready) {
+        cnd_wait(&cv, &mtx);
+    }
+    printf("Waiter proceeding!\\n");
+    mtx_unlock(&mtx);
+    return 0;
 }
 
-void demo_advanced_thread_management(void) {
-        thrd_t t;
-        thrd_create(&t, detached_worker, NULL);
+int main(void) {
+    mtx_init(&mtx, mtx_plain);
+    cnd_init(&cv);
 
-        // Give detached thread time to finish before main thread exits
-        struct timespec wait_time = { .tv_nsec = 100000000 }; // 100 ms
-        thrd_sleep(&wait_time, NULL);
+    thrd_t t;
+    thrd_create(&t, waiter, nullptr);
 
-        // Takeaway 20.6 #1: Returning from main or calling exit terminates ALL running threads
+    // Simulate work, then wake the thread
+    mtx_lock(&mtx);
+    ready = true;
+    cnd_signal(&cv); // Wake up the waiter
+    mtx_unlock(&mtx);
+
+    thrd_join(t, nullptr);
+
+    cnd_destroy(&cv);
+    mtx_destroy(&mtx);
+    return 0;
 }
+/* Expected output:
+Waiter proceeding!
+*/
+
 ```
 
-### 7. Ensuring Liveness & Preventing Deadlocks (Section 20.7)
-A **deadlock** occurs when threads freeze permanently while waiting for resources locked by each other.
+---
 
-* **Lock Hierarchy Rule:**
-  * **Takeaway 20.7 #1:** *Critical sections that need several mutexes to be locked should always lock these mutexes in the same order*. Enforcing a global locking order eliminates circular wait deadlocks.
-* **Timeout Guards:**
-  * **Takeaway 20.7 #2:** *Prefer `cnd_timedwait` over `cnd_wait` to avoid deadlocks*. Bounding wait times guarantees that threads eventually wake up to re-evaluate state or exit gracefully.
+## 20.6 More sophisticated thread management
 
-#### Example
+### Detached Threads and System Lifetimes
 
-A deadlock occurs when threads freeze permanently waiting for resources locked by each other.
+**What it is:** Threads don't have a hierarchical parent-child structure; any thread can be detached (`thrd_detach`), allowing it to run independently without being `join`ed .
 
-* **Takeaway 20.7 #1:** *Critical sections that need several mutexes to be locked should always lock these mutexes in the same order*.
-* **Takeaway 20.7 #2:** *Prefer `cnd_timedwait` over `cnd_wait` to avoid deadlocks*.
+> Takeaway 20.6 #1 _Returning from main or calling exit terminates all threads._
+
+**Explanation:** Regardless of their state, all threads are aggressively shut down if `main` returns or `exit()` is called . To allow detached threads to finish smoothly, use `thrd_exit(0)` inside `main` .
+
+> Takeaway 20.6 #2 _While blocking on `mtx_t` or `cnd_t`, a thread frees processing resources._
+
+**Explanation:** Blocking synchronization puts the thread to sleep, yielding CPU time slices to other threads, unlike busy-wait loops (`while(!flag) {}`) which burn CPU cycles .
+
+**Recap:**
+
+- Detach threads when their return value isn't needed.
+- Blocking primitives save system CPU time .
 
 ```c
 #include <stdio.h>
 #include <threads.h>
-#include <time.h>
 
-static mtx_t mutex_A;
-static mtx_t mutex_B;
-
-void safe_multi_lock_operation(void) {
-        // Takeaway 20.7 #1: Always acquire multiple mutexes in a fixed global order (A then B)
-        mtx_lock(&mutex_A);
-        mtx_lock(&mutex_B);
-
-        // --- Safe Critical Section ---
-
-        mtx_unlock(&mutex_B);
-        mtx_unlock(&mutex_A);
+int background_task(void* arg) {
+    printf("Background task running...\\n");
+    return 0;
 }
 
-void safe_bounded_condition_wait(cnd_t* cnd, mtx_t* mtx, bool* predicate) {
-        mtx_lock(mtx);
+int main(void) {
+    thrd_t t;
+    thrd_create(&t, background_task, nullptr);
 
-        while (!*predicate) {
-                struct timespec timeout;
-                timespec_get(&timeout, TIME_UTC);
-                timeout.tv_sec += 2; // 2-second upper limit
+    // Detach the thread. OS will reclaim resources when it finishes.
+    thrd_detach(t);
 
-                // Takeaway 20.7 #2: Prefer cnd_timedwait over cnd_wait to prevent infinite deadlock blocking
-                int res = cnd_timedwait(cnd, mtx, &timeout);
-                if (res == thrd_timedout) {
-                        printf("Wait timed out! Re-evaluating liveness...\n");
-                        break; // Break out to avoid permanent blockage
-                }
-        }
-
-        mtx_unlock(mtx);
+    // Using thrd_exit in main prevents early termination of detached threads
+    // thrd_exit(0);
+    return 0;
 }
+
 ```
 
-### Summary Table of Chapter 20 Key Takeaways
+---
 
-| Takeaway ID | Takeaway Rule Text |
-| :--- | :--- |
-| **20.1 #1** | *If a thread \\(T_0\\) writes a non-atomic object that is simultaneously read or written by another thread \\(T_1\\), the execution fails*. |
-| **20.1 #2** | *In view of execution in different threads, standard operations on atomic objects are indivisible and linearizable*. |
-| **20.1 #3** | *Use the specifier syntax `_Atomic(T)` for atomic declarations*. |
-| **20.1 #4** | *There are no atomic array types*. |
-| **20.1 #5** | *Atomic objects are the privileged tool to force the absence of race conditions*. |
-| **20.2 #1** | *A properly initialized `FILE*` can be used race-free by several threads*. |
-| **20.2 #2** | *Concurrent write operations should print entire lines at once*. |
-| **20.2 #3** | *Destruction and deallocation of shared dynamic objects need a lot of care*. |
-| **20.3 #1** | *Pass thread-specific data through function arguments*. |
-| **20.3 #2** | *Keep thread-specific state in local variables*. |
-| **20.3 #3** | *A `thread_local` variable has one separate instance for each thread*. |
-| **20.3 #4** | *Use `thread_local` if initialization can be determined at compile time*. |
-| **20.4 #1** | *Mutex operations provide linearizability*. |
-| **20.4 #2** | *Every mutex must be initialized with `mtx_init`*. |
-| **20.4 #3** | *A thread that holds a nonrecursive mutex must not call any of the mutex lock functions for it*. |
-| **20.4 #4** | *A recursive mutex is only released after the holding thread issues as many calls to `mtx_unlock` as it has acquired locks*. |
-| **20.4 #5** | *A locked mutex must be released before the termination of the thread*. |
-| **20.4 #6** | *A thread must only call `mtx_unlock` on a mutex that it holds*. |
-| **20.4 #7** | *Each successful mutex lock corresponds to exactly one call to `mtx_unlock`*. |
-| **20.4 #8** | *A mutex must be destroyed at the end of its lifetime*. |
-| **20.5 #1** | *On return from a `cnd_t` wait, the expression must be checked again*. |
-| **20.5 #2** | *A condition variable can only be used simultaneously with one mutex*. |
-| **20.5 #3** | *A `cnd_t` must be initialized dynamically*. |
-| **20.5 #4** | *A `cnd_t` must be destroyed at the end of its lifetime*. |
-| **20.6 #1** | *Returning from `main` or calling `exit` terminates all threads*. |
-| **20.6 #2** | *While blocking on `mtx_t` or `cnd_t`, a thread frees processing resources*. |
-| **20.7 #1** | *Critical sections that need several mutexes to be locked should always lock these mutexes in the same order*. |
-| **20.7 #2** | *Prefer `cnd_timedwait` over `cnd_wait` to avoid deadlocks*. |
+## 20.7 Ensure liveness
+
+### Preventing Deadlocks
+
+**What it is:** A deadlock occurs when two or more threads block indefinitely, waiting for each other to release mutexes.
+
+> Takeaway 20.7 #1 _Critical sections that need several mutexes to be locked should always lock these mutexes in the same order._
+
+**Explanation:** If Thread A locks Mutex 1 then Mutex 2, and Thread B locks Mutex 2 then Mutex 1, a race can cause A to hold 1 and wait for 2, while B holds 2 and waits for 1. Total gridlock .
+
+> Takeaway 20.7 #2 _Prefer `cnd_timedwait` over `cnd_wait` to avoid deadlocks._
+
+**Explanation:** A timed wait allows the thread to break out of an infinite wait if a signal is missed due to a logic bug or unhandled edge case .
+
+**Recap:**
+
+- Always lock multiple mutexes in a globally agreed-upon order .
+- Use timeouts on condition variables to guarantee forward progress .
+
+---
+
+## Summary
+
+Threads introduce powerful concurrency to C via the `<threads.h>` API, allowing tasks to operate concurrently . Safe interaction requires strict synchronization. `_Atomic` variables handle simple data sharing indivisibly . For larger structures, Mutexes (`mtx_t`) protect critical sections , and condition variables (`cnd_t`) coordinate task execution efficiently without busy-waiting . Managing thread-local data (`thread_local`), one-time initializations (`call_once`), and observing lock hierarchies are critical techniques to avoid race conditions, memory leaks, and deadlocks .
+
+## Self-Check Questions
+
+1. **Q: How do you initiate a new thread in C?**
+   A: By calling `thrd_create`, providing a `thrd_t` pointer, a start function, and a `void*` argument .
+
+2. **Q: What happens if two threads write to a standard `int` simultaneously?**
+   A: A race condition occurs, resulting in undefined behavior (execution fails) .
+
+3. **Q: How do you prevent race conditions on small scalar variables?**
+   A: Declare them with the `_Atomic` type specifier .
+
+4. **Q: What is the primary purpose of a mutex?**
+   A: To protect critical sections, ensuring only one thread can access complex shared data at a time .
+
+5. **Q: Why must a `cnd_wait` call be placed inside a `while` loop?**
+   A: To re-evaluate the condition expression upon waking up, protecting against spurious wakeups or state changes .
+
+6. **Q: How are `mtx_t` and `cnd_t` objects properly cleaned up?**
+   A: Using `mtx_destroy` and `cnd_destroy`, respectively, at the end of their lifetimes .
+
+7. **Q: What happens to a spawned thread if `main` returns?**
+   A: The thread is abruptly terminated regardless of its execution state .
+
+8. **Q: How can you prevent deadlocks when multiple mutexes are needed?**
+   A: Always acquire the mutexes in the exact same order across all threads .
