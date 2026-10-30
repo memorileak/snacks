@@ -11,295 +11,499 @@ math = true
 # cover.image = "images/cover.png"
 +++
 
-Chapter 14 of Jens Gustedt's *Modern C: A Guide to the C23 Standard*, titled **"More involved processing and IO,"** builds upon pointer mechanics to explore sophisticated string processing, formatted stream input, extended character encodings (multibyte and UTF), binary stream manipulation, and compile-time resource embedding.
+## 14.1. Text processing
 
-Here is a detailed breakdown of the most important concepts and key takeaways from Chapter 14 across its six core sections:
+### String Searching and `const`-Safeness
 
+**What it is:** When processing strings, standard C library functions like `memchr` and `strchr` are used to find characters. However, historically, these functions returned a non-`const` pointer even when passed a `const` string, breaking `const`-correctness.
 
-### 1. Text Processing & Safe Formatting (Section 14.1)
-Pointer arithmetic unlocks flexible text processing, but older C library interfaces introduce subtle type-safety and buffer overflow risks.
+**Why it matters / how it works:** If a function returns a mutable pointer to an immutable string, it opens the door for accidental modification of read-only memory, leading to undefined behavior or segmentation faults. C23 resolves this by providing type-generic macros that ensure the return type respects the `const`-ness of the input.
 
-* **`const`-Safety in Search Interfaces:**
-  * **Takeaway 14.1 #1:** *The string `strto...` conversion functions are not `const`-safe*.
-  * **Takeaway 14.1 #2:** *The function interfaces for `memchr` and `strchr` search functions are not `const`-safe*. Historically, passing a `char const*` into these functions allowed returning a non-const `char*` pointer into the string, creating a type-system hole.
-  * **Takeaway 14.1 #3:** *The type-generic interfaces for `memchr` and `strchr` search functions are `const`-safe*. C23 resolves this flaw by providing type-generic macros that preserve pointer qualifiers.
-  * **Takeaway 14.1 #4:** *The `strspn` and `strcspn` search functions are `const`-safe* because they return index offsets rather than reinterpreted pointers.
-* **Buffer Safety with `snprintf`:**
-  * **Takeaway 14.1 #5:** *`sprintf` makes no provision against buffer overflow*. If the destination buffer is too small, `sprintf` causes undefined memory corruption.
-  * **Takeaway 14.1 #6:** *Use `snprintf` when formatting output of unknown length*.
-  * **Sizing Trick:** Calling `snprintf(nullptr, 0, format, ...)` writes nothing to memory but returns the exact number of bytes required to store the formatted string, allowing programs to allocate buffers dynamically with exact precision.
+**Key details:**
 
-#### Example
+- Standard `strchr` returns `char*`, stripping the `const` qualifier of a `const char*` argument in older C versions.
+- C23 type-generic interfaces correctly map `const char*` inputs to `const char*` outputs.
+- Functions returning an integer index (like `strspn` and `strcspn`) have always been safe since they don't return pointers.
 
-Standard string conversion functions (`strtod`, `strtoul`) and classic search interfaces (`memchr`, `strchr`) historically lacked `const`-safety because they accepted `char const*` inputs but returned non-const `char*` pointers. C23 resolves this issue by introducing type-generic macros that preserve pointer qualifiers. Additionally, while `sprintf` provides no protection against buffer overflows, `snprintf` guarantees buffer safety and enables exact buffer size calculations when passed `nullptr` and a length of `0`.
+**Pitfalls:** Compiling pre-C23 code might silently allow a `const` string to be modified via the pointer returned by `strchr`.
 
-* **Takeaway 14.1 #1:** *The string `strto...` conversion functions are not `const`-safe*.
-* **Takeaway 14.1 #2 & #3:** *The function interfaces for `memchr` and `strchr` search functions are not `const`-safe; C23 type-generic interfaces resolve this*.
-* **Takeaway 14.1 #4:** *The `strspn` and `strcspn` search functions are `const`-safe*.
-* **Takeaway 14.1 #5 & #6:** *`sprintf` makes no provision against buffer overflow; use `snprintf` when formatting output of unknown length*.
+**Connections:** This connects to pointer qualifiers (Chapter 6) and type-generic macros (`<tgmath.h>`, Chapter 8).
+
+> **Takeaway 14.1 #2** The function interfaces for `memchr` and `strchr` search functions are not `const`-safe.
+
+> **Takeaway 14.1 #3** The type-generic interfaces for `memchr` and `strchr` search functions are `const`-safe.
+
+> **Takeaway 14.1 #4** The `strspn` and `strcspn` search functions are `const`-safe.
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-void demo_text_processing_and_formatting(void) {
-  // 1. CONST-SAFETY IN C23 SEARCH FUNCTIONS
-  char const read_only_text[] = "C23 Standard Text";
+int main(void) {
+    const char* text = "Hello, C23!";
 
-  // C23 type-generic macro returns 'char const*' when passed 'char const*' (Takeaway 14.1 #3)
-  char const* found = strchr(read_only_text, 'S');
-  if (found) {
-    printf("Found character: %c\n", *found);
-  }
+    // In C23, this uses a type-generic macro.
+    // It returns const char* because 'text' is const char*.
+    const char* found = strchr(text, 'C');
 
-  // Index search functions (strspn, strcspn) return size_t offsets and are inherently const-safe
-  size_t span = strspn(read_only_text, "C23 "); // Takeaway 14.1 #4
-  printf("Initial matching span length: %zu\n", span);
-
-  // 2. BUFFER SAFETY & EXACT SIZING WITH snprintf (Takeaway 14.1 #6)
-  size_t val1 = 1024, val2 = 2048;
-  char const* label = "Buffer Sizing Test";
-
-  // SIZING TRICK: Passing (nullptr, 0) calculates exact required bytes without writing memory
-  int required_len = snprintf(nullptr, 0, "%s: %zu + %zu", label, val1, val2);
-
-  if (required_len > 0) {
-    size_t buf_size = (size_t)required_len + 1; // Include '\0' terminator
-    char* dynamic_buf = malloc(buf_size);
-
-    if (dynamic_buf) {
-      // snprintf bounds memory writes to buf_size, preventing overflows (Takeaway 14.1 #5)
-      snprintf(dynamic_buf, buf_size, "%s: %zu + %zu", label, val1, val2);
-      printf("Formatted output: %s\n", dynamic_buf);
-      free(dynamic_buf);
+    if (found) {
+        printf("Found: %s\n", found);
     }
-  }
+
+    // Using strspn (always const-safe as it returns size_t)
+    size_t span = strspn(text, "Helo, ");
+    printf("Initial span matching 'Helo, ': %zu\n", span);
+
+    return 0;
 }
+/* Expected Output:
+Found: C23!
+Initial span matching 'Helo, ': 7
+*/
+
+/* What goes wrong if... (Pre-C23)
+char* bad_ptr = strchr(text, 'C'); // Historically allowed, stripping const!
+*bad_ptr = 'X'; // Undefined behavior: modifying a string literal!
+*/
+
 ```
 
-### 2. Formatted Input: `scanf`, `fscanf`, and `sscanf` (Section 14.2)
-The `scanf` family (`fscanf` for streams, `scanf` for `stdin`, `sscanf` for strings) parses structured text into values, but possesses tricky edge cases.
+### Output Formatting and Buffer Overflow
 
-* **Pointer Arguments:** Every target parameter passed to `scanf` must be a valid pointer to the receiving variable.
-* **Whitespace & Newline Behavior:**
-  * A space character `' '` in a `scanf` format string matches any sequence of zero or more whitespace characters (spaces, tabs, newlines).
-  * `%s` skips leading whitespace and scans a sequence of non-whitespace characters, placing a terminating `0` byte at the end. `%c` reads exact character counts without skipping whitespace.
-* **Scan Sets (`%[...]`):** Scan sets match specific character sets (e.g., `%` for digits or `%[^\n]` to read up to a newline).
-* **Fragility:** Because `scanf` functions read across newline boundaries and easily desynchronize on unexpected input, Gustedt recommends reading full lines using `fgets` (or `fgetline`) first, followed by numeric conversion functions like `strtod` or `strtoul`.
+**What it is:** The `sprintf` function writes formatted data into a character string instead of a stream. Its safer counterpart is `snprintf`, which limits the number of characters written.
 
-#### Example
+**Why it matters / how it works:** `sprintf` just writes to the provided buffer until the format string is exhausted, assuming the buffer is large enough. `snprintf` takes a size parameter and guarantees it will never write past that bound (including the null terminator).
 
-Functions in the `scanf` family (`scanf`, `fscanf`, `sscanf`) parse input streams using format specifiers and require valid pointer arguments to store output. However, `scanf` can easily desynchronize when encountering unexpected newlines or invalid characters. A safer approach combines full-line reads using `fgets` with robust numerical parsing via `strtoul` or `strtod`.
+**Key details:**
+
+- `sprintf` always ensures a `0` (null terminator) is placed at the end of the string.
+- `snprintf(NULL, 0, format, ...)` is a common idiom to calculate the exact buffer size needed before allocating memory.
+
+**Pitfalls:** Using `sprintf` with untrusted input or dynamically sized data almost inevitably leads to buffer overflow vulnerabilities.
+
+**Connections:** Relates to `printf` and formatted output (Chapter 8).
+
+> **Takeaway 14.1 #5** `sprintf` makes no provision against buffer overflow.
+
+> **Takeaway 14.1 #6** Use `snprintf` when formatting output of unknown length.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 
-void demo_formatted_input(void) {
-  // 1. FORMATTED SCANNING WITH sscanf
-  char const* input_line = "2026 0xFF 3.14159";
-  int year;
-  unsigned int hex_val;
-  double pi;
+int main(void) {
+    double val = 12345.6789;
 
-  // sscanf requires pointers to receiving variables (&year, &hex_val, &pi)
-  int scanned = sscanf(input_line, "%d %x %lg", &year, &hex_val, &pi);
-  if (scanned == 3) {
-    printf("Parsed via sscanf: Year=%d, Hex=0x%X, Pi=%g\n", year, hex_val, pi);
-  }
+    // 1. Determine required size using snprintf with NULL/0
+    int req_size = snprintf(NULL, 0, "The value is %f", val);
 
-  // 2. ROBUST ALTERNATIVE: fgets COMBINED WITH strtoul/strtod (Takeaway 8.4.5 #1 & 14.2)
-  char buffer = {};
-  printf("Simulated line input processing...\n");
-
-  // Reading full lines prevents line-desynchronization issues common to scanf
-  char const* test_str = "  42000 remaining";
-  char* end_ptr = nullptr;
-
-  // strtoul cleanly parses numbers, skips leading whitespace, and reports leftover text
-  unsigned long value = strtoul(test_str, &end_ptr, 0);
-  if (end_ptr != test_str) {
-    printf("Parsed number: %lu, Remaining text suffix: '%s'\n", value, end_ptr);
-  }
+    if (req_size >= 0) {
+        // 2. Allocate exact memory (+1 for null terminator)
+        char* safe_buf = malloc(req_size + 1);
+        if (safe_buf) {
+            // 3. Write safely
+            snprintf(safe_buf, req_size + 1, "The value is %f", val);
+            printf("%s\n", safe_buf);
+            free(safe_buf);
+        }
+    }
+    return 0;
 }
+/* Expected Output:
+The value is 12345.678900
+*/
+
+/* What goes wrong if...
+char small_buf[10];
+sprintf(small_buf, "The value is %f", val);
+// Buffer overflow! small_buf only holds 10 bytes, but the string is much longer.
+*/
+
 ```
 
-### 3. Extended Character Sets & Multibyte Strings (Section 14.3)
-To support internationalization beyond ASCII, C provides **multibyte character strings** and **wide characters** (`wchar_t`).
+**Recap:**
 
-* **Locale Configuration:** Printing and processing multibyte strings correctly requires invoking `setlocale(LC_ALL, "")` at application startup.
-* **Properties of Multibyte Strings:**
-  * **Takeaway 14.3 #1:** *Multibyte characters don’t contain null bytes* inside their byte sequences.
-  * **Takeaway 14.3 #2:** *Multibyte strings are null terminated*.
-  * Because multibyte strings contain no internal null bytes, standard string functions like `strcpy` work seamlessly. However, `strlen` returns the raw *byte count*, whereas computing displayed character glyph counts requires `mbsrlen`.
-* **Wide Characters:** Wide characters (`wchar_t`, classified via `<wctype.h>`) use fixed-width integer encodings prefixed with `L` (e.g., `L'ä'`, `L"string"`).
+- C23 type-generic macros make string searches `const`-safe.
+- Never use `sprintf`; always prefer `snprintf` for string formatting to prevent buffer overflows.
 
-#### Example
+---
 
-Standardizing text output for international character sets requires calling `setlocale(LC_ALL, "")` at process startup to match the system's execution locale. **Multibyte strings** represent extended characters using variable-length byte sequences that are null-terminated and contain no internal zero bytes. While standard string functions like `strcpy` work on multibyte strings, `strlen` returns raw byte counts rather than visible displayed character glyphs.
+## 14.2. Formatted input
 
-* **Takeaway 14.3 #1:** *Multibyte characters don’t contain null bytes*.
-* **Takeaway 14.3 #2:** *Multibyte strings are null terminated*.
+### The `scanf` Family
+
+**What it is:** The C library provides `fscanf` (stream), `scanf` (`stdin`), and `sscanf` (string) to parse formatted text into typed variables.
+
+**Why it matters / how it works:** These functions do the reverse of `printf`. They rely on format strings (e.g., `"%lg"`) and require pointers to variables so they can modify them.
+
+**Key details:**
+
+- All arguments corresponding to specifiers _must_ be pointers.
+- Whitespace handling is tricky: a space `' '` in the format matches _any_ sequence of whitespace (spaces, tabs, newlines).
+- `%s` matches non-whitespace characters and appends a `0` (null terminator), while `%c` reads raw characters without adding a terminator.
+- Character classes like `%[aeiou]` can match specific sets, and `%[^ \n]` acts as a negated set.
+- The `*` modifier suppresses assignment (e.g., `%*[\n]` skips newlines without storing them).
+
+**Pitfalls:** Failing to check the return value (the number of successfully assigned variables) can result in using uninitialized variables if parsing fails. `%s` without a width limit (like `%20s`) is a buffer overflow risk.
+
+**Connections:** Counterpart to `printf` formats (Chapter 8.4) but has divergence in types (e.g., `%f` for `float` and `%lf` or `%lg` for `double` in `scanf`, unlike `printf`).
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
+
+int main(void) {
+    const char* input = "  42 3.1415 text\n";
+    int i;
+    double d;
+    char str[10];
+
+    // sscanf reads from a string.
+    // %d reads integer, %lg reads double, %9s reads up to 9 non-whitespace chars.
+    int parsed = sscanf(input, "%d %lg %9s", &i, &d, str);
+
+    if (parsed == 3) {
+        printf("Parsed: %d, %g, %s\n", i, d, str);
+    } else {
+        printf("Failed to parse all items.\n");
+    }
+    return 0;
+}
+/* Expected Output:
+Parsed: 42, 3.1415, text
+*/
+
+/* What goes wrong if...
+sscanf(input, "%d %lg", i, d); // Missing '&' pointers! Will cause a memory fault.
+*/
+
+```
+
+**Recap:**
+
+- `scanf` requires pointers to write to.
+- Check the return value to confirm assignments.
+- Beware of whitespace nuances and use width limits on `%s`.
+
+---
+
+## 14.3. Extended character sets
+
+### Multibyte Strings and `locale`
+
+**What it is:** Multibyte strings allow the representation of extended character sets (like Unicode) using sequences of one or more basic `char` bytes.
+
+**Why it matters / how it works:** Traditional C was built around 8-bit ASCII. Multibyte strings allow global text representation. Before printing extended characters, the program must synchronize with the environment's native encoding using `setlocale(LC_ALL, "")`.
+
+**Key details:**
+
+- A **multibyte character** is a sequence of bytes representing one extended character.
+- They are stored in standard `char` arrays.
+- `strlen` returns the number of _bytes_, not the number of _characters_.
+- Parsing state is tracked via the `mbstate_t` type from `<wchar.h>`.
+
+**Pitfalls:** Forgetting `setlocale` will result in terminal garbage. Standard string functions like `strchr` won't find extended characters correctly because they look at single bytes.
+
+**Connections:** Relates to basic character types (Chapter 5) and string library functions (Chapter 8.5).
+
+> **Takeaway 14.3 #1** Multibyte characters don't contain null bytes.
+
+> **Takeaway 14.3 #2** Multibyte strings are null terminated.
+
+```c
+#include <stdio.h>
 #include <string.h>
-#include <locale.h> // For setlocale
-#include <wchar.h>  // For wchar_t and mbsrtowcs
-
-void demo_extended_character_sets(void) {
-  // Enable system default locale for proper multibyte text rendering (Section 14.3)
-  setlocale(LC_ALL, "");
-
-  // Multibyte string containing UTF-8 characters (Takeaway 14.3 #1 & #2)
-  char const* mb_str = "C23 Standard: €100";
-
-  // strlen computes total RAW BYTES (including multi-byte UTF-8 sequences)
-  size_t byte_count = strlen(mb_str);
-
-  // mbsrtowcs calculates the actual number of WIDE CHARACTERS / displayed glyphs
-  mbstate_t state = {};
-  char const* src_ptr = mb_str;
-  size_t wchar_count = mbsrtowcs(nullptr, &src_ptr, 0, &state);
-
-  printf("String: '%s'\n", mb_str);
-  printf("Raw Byte Count (strlen): %zu bytes\n", byte_count);
-  printf("Character Count (mbsrtowcs): %zu characters\n", wchar_count);
-
-  // WIDE CHARACTERS (wchar_t) and 'L' prefixed literals
-  wchar_t const* wide_str = L"Wide Character Literal: €";
-  wprintf(L"%ls\n", wide_str);
-}
-```
-
-### 4. UTF Encodings & Restartable Conversions (Sections 14.4 & 14.5)
-C23 standardizes explicit Unicode UTF encodings and stateful conversion utilities.
-
-* **C23 UTF Types:** `<uchar.h>` defines fixed UTF character types (`char8_t` for UTF-8, `char16_t` for UTF-16, `char32_t` for UTF-32) accompanied by string literal prefixes (`u8"..."`, `u"..."`, `U"..."`).
-* **Restartable Conversions (`XXXrtoYYY`):** Functions such as `mbrtoc8` and `c8rtomb` perform restartable conversions between multibyte encodings and UTF characters.
-* **State Tracking (`mbstate_t`):**
-  * **Takeaway 14.5 #2:** *The multibyte `mb` encoding of a code point may be collected piecewise from the input*.
-  * By passing a state tracking object (`mbstate_t*`), restartable functions can process incomplete multibyte character sequences split across buffer boundaries without losing parsing context.
-
-#### Example
-
-C23 defines standardized UTF character types (`char8_t`, `char16_t`, `char32_t`) along with string literal prefixes (`u8"..."`, `u"..."`, `U"..."`). Restartable conversion functions (`mbrtoc8`, `c8rtomb`) use an `mbstate_t` tracking object to convert multibyte text streams piecewise across buffer boundaries without losing context.
-
-* **Takeaway 14.5 #1:** *The multibyte `mb` encoding of a code point is written to the output string all at once*.
-* **Takeaway 14.5 #2:** *The multibyte `mb` encoding of a code point may be collected piecewise from the input*.
-
-```c
-#include <stdio.h>
-#include <uchar.h>  // Provides char8_t, char16_t, char32_t, mbrtoc8
 #include <locale.h>
 
-void demo_utf_and_restartable_conversions(void) {
-  setlocale(LC_ALL, "");
+int main(void) {
+    // 1. Switch to native locale for proper terminal rendering
+    setlocale(LC_ALL, "");
 
-  // C23 UTF Literal Prefixes (Section 14.4)
-  char8_t const*  utf8_str  = u8"UTF-8 Text: 𝜋"; // UTF-8 encoded
-  char16_t const* utf16_str = u"UTF-16 Text";   // UTF-16 encoded
-  char32_t const* utf32_str = U"UTF-32 Text";   // UTF-32 encoded
+    // 2. Multibyte string containing a 2-byte UTF-8 character (ä)
+    char mb_str[] = "b\u00E4r"; // 'b', 'ä', 'r', '\0'
 
-  printf("C23 UTF-8 Literal: %s\n", (char const*)utf8_str);
+    printf("String: %s\n", mb_str);
 
-  // RESTARTABLE MULTIBYTE CONVERSION (mbrtoc8)
-  char const* input_bytes = "C23 𝜋";
-  mbstate_t state = {};
-  char8_t out_char = 0;
-  size_t bytes_consumed = 0;
+    // 3. strlen counts bytes, not glyphs. 'ä' is 2 bytes in UTF-8.
+    printf("Byte length (strlen): %zu\n", strlen(mb_str));
 
-  printf("Piecewise UTF-8 Decoding:\n");
-  char const* ptr = input_bytes;
+    // Because they don't contain inner nulls, standard copy works.
+    char copy[10];
+    strcpy(copy, mb_str);
+    printf("Copied correctly: %s\n", copy);
 
-  // mbrtoc8 parses code points piecewise using 'state' (Takeaway 14.5 #2)
-  while (*ptr) {
-    size_t res = mbrtoc8(&out_char, ptr, 4, &state);
-
-    if (res == (size_t)-1 || res == (size_t)-2) {
-      puts("Invalid or incomplete multibyte sequence");
-      break;
-    } else if (res == 0) {
-      break; // Null character reached
-    }
-
-    printf("  Consumed %zu byte(s) -> Code Point byte: 0x%02X\n", res, (unsigned int)out_char);
-    ptr += res;
-  }
+    return 0;
 }
+/* Expected Output:
+String: bär
+Byte length (strlen): 4
+Copied correctly: bär
+*/
+
+/* What goes wrong if...
+// If we omit setlocale(LC_ALL, ""), the terminal might interpret the
+// multibyte sequence incorrectly and print "bÃ¤r".
+*/
+
 ```
 
-### 5. Binary Streams & C23 Resource Embedding (Section 14.6)
-Unlike text streams (which convert end-of-line sequences like `\n` to platform-specific conventions), **binary streams** transfer uninterpreted, raw object bytes 1-to-1.
+### Wide Characters (`wchar_t`)
 
-* **Core Binary I/O Functions:**
-  * `fread(ptr, size, nmemb, stream)` and `fwrite(ptr, size, nmemb, stream)` read and write contiguous memory blocks.
-  * `fseek(stream, offset, whence)` updates file stream positions relative to `SEEK_SET` (file start), `SEEK_CUR` (current position), or `SEEK_END`.
-  * `ftell(stream)` retrieves the current byte position.
-* **Binary Rules & Limitations:**
-  * **Takeaway 14.6 #1:** *Open streams on which you use `fread` or `fwrite` in binary mode* (using mode flags like `"rb"` or `"wb"`).
-  * **Takeaway 14.6 #2:** *Files written in binary mode are not portable between platforms* due to differences in platform endianness, type padding, and struct alignment.
-  * **Takeaway 14.6 #3:** *`fseek` and `ftell` are not suitable for very large file offsets* exceeding `LONG_MAX` bytes (~2 GiB on 32-bit systems).
-* **C23 `#embed` Directive:**
-  * C23 introduces `#embed "filename"` (guarded by `__has_embed`), which embeds binary files (such as images, certificates, or datasets) directly into character array initializers at compile time, eliminating manual binary-to-C translation tools.
+**What it is:** A type (`wchar_t`) that encodes exactly one extended character per array element, making character counting and iteration uniform.
 
-#### Example
+**Why it matters / how it works:** Since multibyte strings have variable length characters, `wchar_t` (often 16-bit or 32-bit) allows constant-time access to the nth character.
 
-Binary streams transfer uninterpreted raw bytes without the line-ending transformations used in text mode. Functions like `fread`, `fwrite`, `fseek`, and `ftell` handle binary data, though binary files are not inherently portable across different CPU endianness or alignment architectures. In C23, the **`#embed`** preprocessor directive embeds raw binary file contents directly into character array initializers at compile time.
+**Key details:**
 
-* **Takeaway 14.6 #1:** *Open streams on which you use `fread` or `fwrite` in binary mode*.
-* **Takeaway 14.6 #2:** *Files written in binary mode are not portable between platforms*.
-* **Takeaway 14.6 #3:** *`fseek` and `ftell` are not suitable for very large file offsets*.
+- Prefixed with `L` (e.g., `L'ä'` or `L"text"`).
+- Functions generally prefixed with `wcs` (Wide Character String) map to standard string functions.
+
+**Pitfalls:** Wide strings consume significantly more memory than UTF-8 encoded multibyte strings.
+
+**Connections:** `<wctype.h>` provides wide-character classification functions analogous to `<ctype.h>`.
+
+```c
+#include <stdio.h>
+#include <wchar.h>
+#include <locale.h>
+
+int main(void) {
+    setlocale(LC_ALL, "");
+
+    // Wide string literal
+    wchar_t w_str[] = L"b\u00E4r";
+
+    // %ls is used to print wide character strings
+    printf("Wide String: %ls\n", w_str);
+
+    // wcslen correctly counts characters (glyphs), not bytes
+    printf("Character length (wcslen): %zu\n", wcslen(w_str));
+
+    return 0;
+}
+/* Expected Output:
+Wide String: bär
+Character length (wcslen): 3
+*/
+
+```
+
+**Recap:**
+
+- Initialize `setlocale(LC_ALL, "")` before printing extended characters.
+- Multibyte strings act like normal C strings (null-terminated, no inner nulls) but `strlen` measures bytes, not visual characters.
+- `wchar_t` provides fixed-width character representation.
+
+---
+
+## 14.4. UTF character encodings
+
+**What it is:** Unicode defines character concepts globally. UTF-8, UTF-16, and UTF-32 are encoding formats.
+
+**Why it matters / how it works:** Direct locale reliance is unstable across systems. C11/C23 provide explicit types and literals for direct UTF encodings, guaranteeing behavior independent of the OS locale.
+
+**Key details:**
+
+- **UTF-8:** `char8_t`, prefixed with `u8` (e.g., `u8"text"`). Variable width.
+- **UTF-16:** `char16_t`, prefixed with `u` (e.g., `u"text"`). Uses surrogate pairs for large code points.
+- **UTF-32:** `char32_t`, prefixed with `U` (e.g., `U"text"`). Fixed width, one word per code point.
+- C23 fixed `__STDC_UTF_16__` and `__STDC_UTF_32__` to exactly 1, guaranteeing that these types physically use the UTF encodings.
+
+**Pitfalls:** UTF-16 is notoriously complicated due to surrogate pairs (the basic multilingual plane is 16-bit, but others require two 16-bit words). Prefer UTF-8 or UTF-32.
+
+```c
+#include <stdio.h>
+#include <uchar.h> // for char8_t, char16_t, char32_t (C23)
+
+int main(void) {
+    // Explicit UTF-8 encoding
+    char8_t utf8_str[] = u8"A\u00E4";
+
+    // Explicit UTF-32 encoding
+    char32_t utf32_str[] = U"A\u00E4";
+
+    printf("UTF-8 byte size: %zu\n", sizeof(utf8_str));   // 'A'(1) + 'ä'(2) + '\0'(1) = 4
+    printf("UTF-32 byte size: %zu\n", sizeof(utf32_str)); // 3 chars * 4 bytes = 12
+
+    return 0;
+}
+/* Expected Output:
+UTF-8 byte size: 4
+UTF-32 byte size: 12
+*/
+
+```
+
+**Recap:**
+
+- C23 enforces UTF-16 and UTF-32 formats strictly.
+- Use `u8`, `u`, and `U` prefixes for explicit standard encodings instead of hoping the local execution charset handles it properly.
+
+---
+
+## 14.5. Restartable text conversion
+
+**What it is:** Conversion functions between multibyte/locale strings and explicit UTF strings that maintain a parsing state (`mbstate_t`), allowing conversion to pause and resume.
+
+**Why it matters / how it works:** When reading from a network or file stream, a multibyte character (like a 3-byte UTF-8 glyph) might be split across two buffer reads. Restartable functions (prefixed/suffixed with `r`, e.g., `mbrtoc8`) check the state to see if they are in the middle of assembling a character.
+
+**Key details:**
+
+- Functions include `mbrtowc`, `mbrtoc8`, `mbrtoc16`, `c8rtomb`, etc.
+- They return `mbincomplete` if they need more bytes, or `mbinvalid` on a bad sequence.
+
+**Pitfalls:** Do not discard or reset the `mbstate_t` variable between chunks of the same stream, or the encoding will corrupt.
+
+**Connections:** Relates to Stream IO (Chapter 14.6) when reading chunked data.
+
+> **Takeaway 14.5 #1** The multibyte mb encoding of a code point is written to the output string all at once.
+
+> **Takeaway 14.5 #2** The multibyte mb encoding of a code point may be collected piecewise from the input.
+
+```c
+#include <stdio.h>
+#include <uchar.h>
+#include <wchar.h>
+
+int main(void) {
+    // A UTF-8 multibyte sequence for 'ä' is 0xC3 0xA4
+    char input[] = {(char)0xC3, (char)0xA4};
+
+    mbstate_t state = {0};
+    char32_t output;
+
+    // First call: Give it only the first byte of the 2-byte character
+    size_t res1 = mbrtoc32(&output, &input[0], 1, &state);
+
+    // It should return (size_t)-2 meaning "incomplete"
+    if (res1 == (size_t)-2) {
+        printf("Piecewise: Incomplete, need more bytes.\n");
+    }
+
+    // Second call: Give it the second byte, maintaining the state
+    size_t res2 = mbrtoc32(&output, &input[1], 1, &state);
+
+    if (res2 == 1) {
+        printf("Piecewise: Completed! Code point: U+%04X\n", (unsigned int)output);
+    }
+
+    return 0;
+}
+/* Expected Output:
+Piecewise: Incomplete, need more bytes.
+Piecewise: Completed! Code point: U+00E4
+*/
+
+/* What goes wrong if...
+If we cleared `state` to {0} before the second call, `mbrtoc32` would treat
+the second byte as an isolated invalid byte, returning an error.
+*/
+
+```
+
+**Recap:**
+
+- Use restartable functions to safely parse multibyte inputs from chunked streams.
+- Outputs are generated atomically, but inputs can be digested piecewise.
+
+---
+
+## 14.6. Binary streams
+
+**What it is:** Using standard streams (`FILE*`) in a mode that writes and reads raw memory bytes exactly as they appear in RAM, without text interpretation.
+
+**Why it matters / how it works:** Text mode alters data invisibly: it translates `\n` to `\r\n` on Windows, strips trailing spaces, or alters multibyte chars. Binary mode (`"rb"`, `"wb"`) skips all translation. `fread` and `fwrite` dump bulk bytes directly to/from memory arrays.
+
+**Key details:**
+
+- Open files with the `b` modifier (e.g., `fopen("data.bin", "rb")`).
+- Only `fgetc` and `fputc` handle binary files portably alongside `fread` and `fwrite`.
+
+**Pitfalls:** **Endianness.** Binary dumps map internal CPU registers to disk. A file written with `fwrite` on a Little-Endian machine will read as garbage if read via `fread` into the same `struct` on a Big-Endian machine. Do not use binary mode for cross-platform sharing without writing custom byte-swapping logic.
+
+**Connections:** Relates to file pointers and basic IO (`fopen`, Chapter 8).
+
+> **Takeaway 14.6 #1** Open streams on which you use `fread` or `fwrite` in binary mode.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 
-void demo_binary_streams_and_embed(void) {
-  // 1. BINARY STREAM I/O (Takeaway 14.6 #1)
-  char const* filename = "data.bin";
-  double dataset = {1.1, 2.2, 3.3, 4.4};
+int main(void) {
+    int data[3] = {255, 1024, 42};
 
-  // Open file in BINARY WRITE mode ("wb") to bypass line-ending translations
-  FILE* out_stream = fopen(filename, "wb");
-  if (out_stream) {
-    // Write raw object bytes using fwrite
-    size_t written = fwrite(dataset, sizeof(double), 4, out_stream);
-    printf("Written %zu binary items to %s\n", written, filename);
-    fclose(out_stream);
-  }
+    // 1. Write in Binary Mode
+    FILE* out = fopen("test.bin", "wb");
+    if (out) {
+        // Write the raw bytes of the 3 integers
+        fwrite(data, sizeof(int), 3, out);
+        fclose(out);
+    }
 
-  // Open file in BINARY READ mode ("rb")
-  FILE* in_stream = fopen(filename, "rb");
-  if (in_stream) {
-    // Seek to end to calculate byte size using ftell (Takeaway 14.6 #3)
-    fseek(in_stream, 0, SEEK_END);
-    long file_size = ftell(in_stream);
-    rewind(in_stream);
+    // 2. Read in Binary Mode
+    int input[3] = {0};
+    FILE* in = fopen("test.bin", "rb");
+    if (in) {
+        fread(input, sizeof(int), 3, in);
+        fclose(in);
 
-    printf("Binary file size: %ld bytes\n", file_size);
-
-    double read_buf = {};
-    fread(read_buf, sizeof(double), 4, in_stream);
-    printf("Read element 0: %g\n", read_buf);
-
-    fclose(in_stream);
-    remove(filename); // Clean up temporary binary file
-  }
-
-  // 2. C23 RESOURCE EMBEDDING (#embed directive) (Section 14.6)
-  // Guards embed directive using __has_embed
-  unsigned char const embedded_resource[] = {
-#if defined(__has_embed) && __has_embed("data.bin")
-    #embed "data.bin"
-#else
-    0x00, 0x01, 0x02, 0x03 // Fallback byte array when file is missing
-#endif
-  };
-
-  printf("Embedded binary resource size: %zu bytes\n", sizeof embedded_resource);
+        printf("Read: %d, %d, %d\n", input[0], input[1], input[2]);
+    }
+    return 0;
 }
+/* Expected Output:
+Read: 255, 1024, 42
+*/
+
+/* What goes wrong if...
+If we open with "w" and write binary data, any byte that happens to equal the ASCII
+newline value (10) might be silently converted to a Windows newline (13, 10) on a
+Windows machine, corrupting the binary data integer alignment.
+*/
+
 ```
+
+**Recap:**
+
+- Binary mode (`"b"`) prevents silent IO translation.
+- `fread` and `fwrite` are your primary binary tools.
+- Binary files are generally bound to the local machine's endianness and architecture.
+
+---
+
+## Summary
+
+Chapter 14 dives deeply into the robust mechanisms C provides for interacting with the outside world through text and binary data. It highlights the evolution of `const`-safeness in C23's standard string library, addresses the critical security requirement of bound-checked string processing (`snprintf` over `sprintf`), and exposes the intricacies of reading formatted input with `scanf`. A large focus is placed on the modernization of character encodings: utilizing the environment's locale to process multibyte strings natively, manipulating fixed-width wide characters (`wchar_t`), and leaning on C's formalized support for Unicode formats (UTF-8, UTF-16, UTF-32). The chapter bridges the gap between chunked stream IO and character parsing through restartable conversion functions (`mbrtoc8`), and finally draws a firm dividing line between human-readable text IO and exact, unformatted binary streams (`fread`/`fwrite`).
+
+---
+
+## Self-Check Questions
+
+1. **Why should `sprintf` be avoided in modern C?**
+   It provides no mechanism to stop writing if the format string evaluates to a length larger than the destination buffer, leading to buffer overflows. Use `snprintf` instead.
+
+2. **In C23, why is `strchr(text, 'A')` safer than in C17?**
+   C23 uses type-generic macros that preserve the `const`-qualification of the input string, whereas older standards returned a mutable `char*` regardless of the input.
+
+3. **What does a space character (`' '`) in a `scanf` format string do?**
+   It matches any sequence of whitespace characters (including none, spaces, tabs, and newlines).
+
+4. **Are multibyte strings null-terminated?**
+   Yes, multibyte strings are null-terminated and contain no null bytes within the actual multibyte character sequences.
+
+5. **If `mb_str` contains UTF-8 text, what does `strlen(mb_str)` measure?**
+   It measures the number of _bytes_ in the string, not the number of visual characters (code points).
+
+6. **What function is required to enable correct printing of extended characters to the terminal?**
+   `setlocale(LC_ALL, "");` must be called to sync the program with the native environment's encoding.
+
+7. **What problem does UTF-16 have that UTF-8 and UTF-32 handle more gracefully?**
+   UTF-16 uses surrogate pairs for characters outside the Basic Multilingual Plane, meaning it is neither space-efficient like UTF-8 nor strictly fixed-width (1 element = 1 character) like UTF-32.
+
+8. **What does the `r` in `mbrtoc32` stand for, and what does it mean?**
+   "Restartable". It means the function can maintain an `mbstate_t` object to parse characters that are split across multiple input chunks.
+
+9. **What happens to a newline character (`\n`) written to a file opened in text mode vs binary mode on Windows?**
+   In text mode, it is translated to `\r\n`. In binary mode, it is written exactly as the single byte `\n`.
+
+10. **Why are files written with `fwrite` not portable across all machines?**
+    Because `fwrite` dumps raw memory, the file's data will be tied to the specific endianness (byte order) and data type sizes of the machine that wrote it.
