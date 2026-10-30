@@ -4,7 +4,7 @@ description = "A guide to C23 function-like macros, including expansion rules, a
 date = 2026-09-28T07:10:00Z
 
 [taxonomies]
-tags = ["modernc"]
+tags = ["modernc", "macros"]
 
 [extra]
 math = true
